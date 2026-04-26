@@ -1,0 +1,26 @@
+# Compiled files
+*.class
+
+# Eclipse
+.metadata/
+bin/
+.settings/
+.project
+.classpath
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Maven (if anyone uses it)
+target/
+
+# IntelliJ (if anyone uses it)
+.idea/
+*.iml
+
+# VS Code (if anyone uses it)
+.vscode/
