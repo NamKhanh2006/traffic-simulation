@@ -1,12 +1,12 @@
 package com.myteam.traffic.behavior;
 
-/*import Traffic.vehicle.Vehicle;
+import Traffic.vehicle.Vehicle;
 import Traffic.traffic.TrafficLight;
 import Traffic.behavior.common.*;
-*/
+
 public class NormalDriver extends DriverBehavior {
 
-    /*@Override
+    @Override
     public void decide(Vehicle self, Vehicle front, TrafficLight light) {
 
         DistanceKeeping.keepDistance(self, front);
@@ -24,5 +24,5 @@ public class NormalDriver extends DriverBehavior {
         }
 
         self.moveForward();
-    }*/
+    }
 }
