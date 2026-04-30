@@ -1,9 +1,9 @@
 package com.myteam.traffic.behavior.common;
 
-//import Traffic.vehicle.Vehicle;
+import Traffic.vehicle.Vehicle;
 
 public class DistanceKeeping {
-    /*public static void keepDistance(Vehicle self, Vehicle front) {
+    public static void keepDistance(Vehicle self, Vehicle front) {
         if (front == null) return;
 
         double distance = front.getX() - self.getX();
@@ -11,5 +11,5 @@ public class DistanceKeeping {
             self.slowDown();
             System.out.println(self.getType() + " giam toc giu khoang cach");
         }
-    }*/
+    }
 }
