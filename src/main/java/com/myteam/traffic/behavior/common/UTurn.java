@@ -1,9 +1,14 @@
 package com.myteam.traffic.behavior.common;
 
-import simulation.vehicle.Vehicle;
+import traffic.common.Action;
+import traffic.model.context.RoadContext;
+import traffic.model.vehicle.Vehicle;
 
 public class UTurn {
-    public static void uTurn(Vehicle v) {
-        System.out.println(v.getType() + " quay dau");
+    public static Action decide(Vehicle v, RoadContext c) {
+        if (c.isUTurnAllowed()) {
+            return Action.UTURN;
+        }
+        return null;
     }
 }
