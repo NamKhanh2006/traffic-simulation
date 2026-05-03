@@ -9,17 +9,10 @@ public class EmergencyDriver implements DriverBehavior {
     @Override
     public Action decideAction(Vehicle v, RoadContext c) {
 
-        // Luôn bật còi
-        if (!v.isSirenOn()) {
-            return Action.HONK;
-        }
+        if (!v.isSirenOn()) return Action.HONK;
 
-        // Có xe trước → vượt
-        if (c.getFrontVehicle() != null) {
-            return Action.OVERTAKE;
-        }
+        if (c.getFrontVehicle() != null) return Action.OVERTAKE;
 
-        // Có thể vượt đèn đỏ
         return Action.MOVE_FORWARD;
     }
 }
