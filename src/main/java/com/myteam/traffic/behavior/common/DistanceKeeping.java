@@ -1,15 +1,19 @@
 package com.myteam.traffic.behavior.common;
 
-import Traffic.vehicle.Vehicle;
+import traffic.common.Action;
+import traffic.model.context.RoadContext;
+import traffic.model.vehicle.Vehicle;
+
 
 public class DistanceKeeping {
-    public static void keepDistance(Vehicle self, Vehicle front) {
-        if (front == null) return;
+    public static Action decide(Vehicle v, RoadContext c) {
+        if (c.getFrontVehicle() == null) return null;
 
-        double distance = front.getX() - self.getX();
-        if (distance < 5) {
-            self.slowDown();
-            System.out.println(self.getType() + " giam toc giu khoang cach");
-        }
+        double dist = c.getFrontVehicle().getX() - v.getX();
+
+        if (dist < 5) return Action.SLOW_DOWN;
+        if (dist > 10) return Action.ACCELERATE;
+
+        return null;
     }
 }
