@@ -27,4 +27,8 @@ public class TrafficSign {
     public SignType getSignType() {
         return signType;
     }
+
+    // boolean isApplicable(Vehicle v, Action a, RoadContext c) {
+    //     // Logic to determine if this sign applies to the given vehicle, action, and road context
+    // }
 }
