@@ -1,14 +1,20 @@
 package com.myteam.traffic.sign;
 
+import traffic.model.infrastructure.RoadSegment;
+
 public class TrafficSign {
     private int xPos;
     private int yPos;
-    private SignType signType;
+    private SignType type;
+    private String code;
+    private RoadSegment roadSeg;
 
-    public TrafficSign(int xPos, int yPos, SignType signType) {
+    public TrafficSign(int xPos, int yPos, SignType type, String code, RoadSegment roadSeg) {
         this.xPos = xPos;
         this.yPos = yPos;
-        this.signType = signType;
+        this.type = type;
+        this.code = code;
+        this.roadSeg = roadSeg;
     }
 
     // Getters and setters
@@ -25,7 +31,7 @@ public class TrafficSign {
         this.yPos = yPos;
     }
     public SignType getSignType() {
-        return signType;
+        return type;
     }
 
     // boolean isApplicable(Vehicle v, Action a, RoadContext c) {
