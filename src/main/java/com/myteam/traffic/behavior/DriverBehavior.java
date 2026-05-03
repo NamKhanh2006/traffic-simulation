@@ -1,8 +1,9 @@
 package com.myteam.traffic.behavior;
 
-import Traffic.vehicle.Vehicle;
-import Traffic.traffic.TrafficLight;
+import traffic.common.Action;
+import traffic.model.context.RoadContext;
+import traffic.model.vehicle.Vehicle;
 
-public class DriverBehavior {
-    void decide(Vehicle self, Vehicle front, TrafficLight light);
+public interface DriverBehavior {
+    Action decideAction(Vehicle v, RoadContext context);
 }
