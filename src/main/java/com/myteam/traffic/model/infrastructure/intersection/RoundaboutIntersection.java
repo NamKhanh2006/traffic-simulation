@@ -1,15 +1,28 @@
 package com.myteam.traffic.model.infrastructure.intersection;
 
 /**
- * Lớp đại diện cho các vòng xuyến (Roundabout).
- * Kế thừa GeneralIntersection để quản lý số lượng nhánh kết nối linh hoạt.
+ * Lớp RoundaboutIntersection đại diện cho các vòng xuyến (đảo giao thông) trong hệ thống.
+ * 
+ * <p>Về mặt cấu trúc, vòng xuyến kế thừa từ {@link GeneralIntersection} vì nó có thể kết nối 
+ * với số lượng nhánh (n) linh hoạt. Tuy nhiên, nó bổ sung các thuộc tính vật lý như bán kính 
+ * và các quy tắc ưu tiên đặc thù giúp phương tiện di chuyển theo luồng tròn.</p>
  */
 public class RoundaboutIntersection extends GeneralIntersection {
 
-    private final double radius; // Bán kính vòng xuyến (m)
+    /** Bán kính của đảo tròn trung tâm (đơn vị: mét). */
+    private final double radius; 
 
+    /**
+     * Khởi tạo một nút giao kiểu vòng xuyến.
+     * 
+     * @param centerX Tọa độ X của tâm vòng xuyến.
+     * @param centerY Tọa độ Y của tâm vòng xuyến.
+     * @param branchCount Số lượng đường nhánh đi vào/ra khỏi vòng xuyến.
+     * @param radius Bán kính đảo giao thông (phải > 0).
+     * @throws IllegalArgumentException Nếu bán kính không hợp lệ.
+     */
     public RoundaboutIntersection(double centerX, double centerY, int branchCount, double radius) {
-        // Sử dụng super để thiết lập các thông số cơ bản từ GeneralIntersection
+        // Sử dụng constructor của GeneralIntersection với tên mặc định dựa trên số nhánh
         super(centerX, centerY, branchCount, "Vòng xuyến ngã " + branchCount);
 
         if (radius <= 0) {
@@ -18,23 +31,40 @@ public class RoundaboutIntersection extends GeneralIntersection {
         this.radius = radius;
     }
 
+    /**
+     * Trả về định danh loại nút giao, bao gồm cả số lượng nhánh để dễ nhận diện.
+     * 
+     * @return Chuỗi mô tả loại vòng xuyến.
+     */
     @Override
     public String getIntersectionType() {
         return String.format("Vòng xuyến đa nhánh (Ngã %d)", getExpectedRoadCount());
     }
 
     /**
-     * Logic đặc thù: Trong vòng xuyến, các xe phải ưu tiên xe đang di chuyển bên trong vòng.
-     * Phương thức này có thể được AI của phương tiện gọi để quyết định hành vi nhập làn.
+     * Xác định quy tắc ưu tiên đặc thù của vòng xuyến.
+     * 
+     * <p>Trong mô phỏng giao thông, khi phương tiện tiếp cận vòng xuyến, phương thức này 
+     * nhắc nhở AI rằng xe bên trong vòng (vòng tròn nội tại) luôn có quyền ưu tiên 
+     * cao hơn các xe đang đứng chờ nhập làn từ các nhánh ngoài.</p>
+     * 
+     * @return Luôn trả về true đối với mô hình vòng xuyến tiêu chuẩn.
      */
     public boolean hasInsidePriority() {
         return true;
     }
 
+    /**
+     * Lấy bán kính của vòng xuyến. 
+     * Giá trị này thường dùng để tính toán quỹ đạo cong của phương tiện khi đi qua nút giao.
+     */
     public double getRadius() {
         return radius;
     }
 
+    /**
+     * Trả về thông tin chi tiết phục vụ việc giám sát và debug hệ thống.
+     */
     @Override
     public String toString() {
         return String.format("RoundaboutIntersection[Branches=%d, Radius=%.1fm, Pos=(%.1f, %.1f)]",
