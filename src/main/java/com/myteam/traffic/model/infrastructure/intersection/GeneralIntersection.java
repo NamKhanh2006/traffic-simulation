@@ -81,7 +81,7 @@ public class GeneralIntersection extends Intersection {
      * Kiểm tra xem giao lộ có thuộc diện "độ phức tạp cao" hay không.
      * 
      * <p>Các giao lộ từ 5 nhánh trở lên (ngã năm, ngã sáu) thường yêu cầu logic 
-     * điều khiển đèn tín hiệu phức tạp hơn hoặc AI phải tính toán kỹ hơn khi chuyển làn.</p>
+     * điều khiển đèn tín hiệu phức tạp hơn hoặc phải tính toán kỹ hơn khi chuyển làn.</p>
      * 
      * @return true nếu số nhánh >= 5.
      */

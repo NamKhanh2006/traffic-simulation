@@ -45,7 +45,7 @@ public class RoundaboutIntersection extends GeneralIntersection {
      * Xác định quy tắc ưu tiên đặc thù của vòng xuyến.
      * 
      * <p>Trong mô phỏng giao thông, khi phương tiện tiếp cận vòng xuyến, phương thức này 
-     * nhắc nhở AI rằng xe bên trong vòng (vòng tròn nội tại) luôn có quyền ưu tiên 
+     *  xe bên trong vòng (vòng tròn nội tại) luôn có quyền ưu tiên 
      * cao hơn các xe đang đứng chờ nhập làn từ các nhánh ngoài.</p>
      * 
      * @return Luôn trả về true đối với mô hình vòng xuyến tiêu chuẩn.
