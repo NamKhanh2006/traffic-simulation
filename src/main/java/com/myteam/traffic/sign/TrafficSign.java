@@ -30,8 +30,11 @@ public class TrafficSign {
     public void setYPos(int yPos) {
         this.yPos = yPos;
     }
-    public SignType getSignType() {
+    public SignType getType() {
         return type;
+    }
+    public void setType(SignType type) {
+        this.type = type;
     }
 
     // boolean isApplicable(Vehicle v, Action a, RoadContext c) {
