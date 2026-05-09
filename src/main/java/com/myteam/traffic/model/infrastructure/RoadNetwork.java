@@ -149,6 +149,18 @@ public class RoadNetwork {
         return nearest;
     }
 
+    /**
+     * Xuất dữ liệu mạng lưới dưới dạng gói RenderData để UI có thể vẽ.
+     *
+     * @return Đối tượng chứa danh sách segment, intersection và bounding box.
+     */
+    public NetworkRenderData getRenderData() {
+        return new NetworkRenderData(
+                new ArrayList<>(segments),
+                new ArrayList<>(intersections)
+        );
+    }
+
     @Override
     public String toString() {
         return String.format("RoadNetwork[Segments=%d, Intersections=%d]",
