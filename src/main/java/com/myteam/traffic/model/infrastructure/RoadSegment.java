@@ -22,6 +22,8 @@ public class RoadSegment {
     private final double endX, endY;     // Tọa độ điểm kết thúc (tim đường)
     private final double length;         // Chiều dài vật lý của đoạn đường
     private final double angle;          // Góc của đoạn đường (Radian) so với trục hoành
+    private boolean onRamp; // Đánh dấu là đường dẫn cao tốc
+    private boolean connector; // Đánh dấu là đoạn nối (không vẽ vạch vàng)
 
     // ── Làn đường (Lanes) ─────────────────────────────────────
     /** Danh sách các làn đường đã được sắp xếp và không thể sửa đổi (unmodifiable) */
@@ -160,7 +162,14 @@ public class RoadSegment {
     public double getEndY()   { return endY; }
     public double getLength() { return length; }
     public double getAngle()  { return angle; }
+    public boolean isOnRamp() { return onRamp; }
+    public void setOnRamp(boolean onRamp) { this.onRamp = onRamp; }
 
+    public boolean isConnector() { return connector; }
+    public void setConnector(boolean connector) { this.connector = connector; }
+    public int getLaneCount() {
+        return lanes.size();
+    }
     /** 
      * Trả về danh sách làn đường. 
      * Vì danh sách đã được bảo vệ bởi Collections.unmodifiableList, việc trả trực tiếp vẫn đảm bảo an toàn.
