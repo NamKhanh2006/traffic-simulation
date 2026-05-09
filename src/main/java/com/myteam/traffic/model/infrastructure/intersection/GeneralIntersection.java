@@ -1,21 +1,24 @@
 package com.myteam.traffic.model.infrastructure.intersection;
 
-import java.util.Map;
 import java.util.HashMap;
+import java.util.Map;
 
 /**
- * Lớp GeneralIntersection đại diện cho một nút giao thông tổng quát trong đô thị.
+ * Lớp GeneralIntersection đại diện cho một nút giao thông tổng quát với số nhánh linh hoạt.
  * 
- * <p>Lớp này được thiết kế để xử lý linh hoạt các loại ngã ba, ngã tư cho đến các 
- * điểm giao cắt phức tạp hơn (ngã năm, ngã sáu...). Nó cung cấp các công cụ để 
- * phân tích mức độ phức tạp và các điểm xung đột tiềm tàng.</p>
+ * <p>Lớp này được sử dụng cho các trường hợp không cần định nghĩa hình học đặc thù (như T-shape hay Roundabout),
+ * hoặc cho các nút giao có số nhánh lớn (ngã sáu, ngã bảy) nơi logic điều khiển chủ yếu dựa trên 
+ * số lượng luồng xung đột.</p>
  */
 public class GeneralIntersection extends Intersection {
 
-    private final int branchCount;  // Số lượng nhánh (đường) hội tụ tại nút giao
-    private final String customName; // Tên tùy chỉnh (VD: "Ngã tư Hàng Xanh")
+    private final int branchCount;  // Số lượng nhánh (đường) hội tụ
+    private final String customName; // Tên riêng (ví dụ: "Vòng xoay Quách Thị Trang")
 
-    /** Cache tên gọi phổ biến tiếng Việt dựa trên số nhánh để tối ưu hiển thị UI/Log. */
+    /** 
+     * Bản đồ tra cứu tên gọi phổ biến tiếng Việt dựa trên số lượng nhánh. 
+     * Giúp UI hiển thị thân thiện hơn thay vì chỉ hiện con số.
+     */
     private static final Map<Integer, String> TYPE_NAMES = new HashMap<>();
     static {
         TYPE_NAMES.put(3, "Ngã ba");
@@ -26,24 +29,24 @@ public class GeneralIntersection extends Intersection {
     }
 
     /**
-     * Khởi tạo một giao lộ tổng quát dựa trên số nhánh.
+     * Khởi tạo giao lộ tổng quát theo số nhánh.
      * 
-     * @param centerX Tọa độ X của tâm nút giao.
-     * @param centerY Tọa độ Y của tâm nút giao.
-     * @param branchCount Số lượng nhánh kết nối (phải >= 3).
+     * @param centerX Tọa độ X của tâm giao lộ.
+     * @param centerY Tọa độ Y của tâm giao lộ.
+     * @param branchCount Số nhánh kết nối (tối thiểu là 3).
      */
     public GeneralIntersection(double centerX, double centerY, int branchCount) {
         this(centerX, centerY, branchCount, null);
     }
 
     /**
-     * Khởi tạo một giao lộ tổng quát với tên gọi tùy chỉnh.
+     * Khởi tạo giao lộ tổng quát với tên tùy chỉnh.
      * 
-     * @param centerX Tọa độ X của tâm nút giao.
-     * @param centerY Tọa độ Y của tâm nút giao.
-     * @param branchCount Số lượng nhánh kết nối.
-     * @param customName Tên riêng của nút giao (có thể null).
-     * @throws IllegalArgumentException Nếu số nhánh nhỏ hơn 3 (không tạo thành giao lộ).
+     * @param centerX Tọa độ X của tâm giao lộ.
+     * @param centerY Tọa độ Y của tâm giao lộ.
+     * @param branchCount Số nhánh kết nối.
+     * @param customName Tên riêng của giao lộ.
+     * @throws IllegalArgumentException Nếu branchCount < 3.
      */
     public GeneralIntersection(double centerX, double centerY, int branchCount, String customName) {
         super(centerX, centerY);
@@ -55,9 +58,7 @@ public class GeneralIntersection extends Intersection {
     }
 
     /**
-     * Trả về số lượng đường tối đa được phép kết nối vào giao lộ này.
-     * 
-     * @return Số nhánh thiết kế.
+     * Trả về số lượng đường nhánh dự kiến sẽ kết nối vào giao lộ này.
      */
     @Override
     public int getExpectedRoadCount() {
@@ -65,11 +66,9 @@ public class GeneralIntersection extends Intersection {
     }
 
     /**
-     * Xác định tên loại giao lộ. 
-     * Ưu tiên sử dụng tên tùy chỉnh, sau đó đến tên phổ biến trong cache, 
-     * cuối cùng là tên định danh theo số nhánh.
+     * Lấy tên định danh của loại giao lộ.
      * 
-     * @return Chuỗi mô tả loại hoặc tên giao lộ.
+     * @return Tên tùy chỉnh nếu có, nếu không sẽ tra cứu từ TYPE_NAMES hoặc trả về chuỗi mặc định.
      */
     @Override
     public String getIntersectionType() {
@@ -78,10 +77,10 @@ public class GeneralIntersection extends Intersection {
     }
 
     /** 
-     * Kiểm tra xem giao lộ có thuộc diện "độ phức tạp cao" hay không.
+     * Đánh giá độ phức tạp của giao lộ.
      * 
-     * <p>Các giao lộ từ 5 nhánh trở lên (ngã năm, ngã sáu) thường yêu cầu logic 
-     * điều khiển đèn tín hiệu phức tạp hơn hoặc phải tính toán kỹ hơn khi chuyển làn.</p>
+     * <p>Các giao lộ có từ 5 nhánh trở lên được coi là phức tạp cao, thường yêu cầu 
+     * pha đèn tín hiệu (Signal Phases) nhiều hơn và AI cần tính toán kỹ hơn khi nhập làn.</p>
      * 
      * @return true nếu số nhánh >= 5.
      */
@@ -89,12 +88,12 @@ public class GeneralIntersection extends Intersection {
         return branchCount >= 5;
     }
 
-    /** 
-     * Ước tính số lượng điểm xung đột luồng xe tiềm tàng (Conflict Points).
+    /**
+     * Ước tính số điểm xung đột (Conflict Points) luồng xe tiềm tàng.
      * 
-     * <p>Số điểm xung đột tăng rất nhanh theo số nhánh. Công thức ước lượng cơ bản 
-     * dựa trên tổ hợp các luồng xe có thể cắt nhau tại nút giao: $n \times (n - 1)$.
-     * Chỉ số này giúp thuật toán định tuyến (Routing) đánh giá rủi ro hoặc độ trễ.</p>
+     * <p>Công thức cơ bản: $P = n \times (n - 1)$. 
+     * Trong đó $n$ là số nhánh. Đây là chỉ số quan trọng để thuật toán tìm đường (Routing) 
+     * đánh giá mức độ rủi ro và khả năng xảy ra ùn tắc tại nút giao.</p>
      * 
      * @return Số lượng điểm xung đột ước tính.
      */
@@ -103,11 +102,11 @@ public class GeneralIntersection extends Intersection {
     }
 
     /**
-     * Trả về chuỗi thông tin chi tiết phục vụ debug.
+     * Trả về chuỗi mô tả trạng thái giao lộ, sử dụng Getter từ lớp cha để lấy tọa độ.
      */
     @Override
     public String toString() {
         return String.format("GeneralIntersection[Type=%s, Branches=%d, Pos=(%.1f, %.1f)]",
-                getIntersectionType(), branchCount, centerX, centerY);
+                getIntersectionType(), branchCount, getCenterX(), getCenterY());
     }
 }

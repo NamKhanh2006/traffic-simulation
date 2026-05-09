@@ -68,6 +68,6 @@ public class RoundaboutIntersection extends GeneralIntersection {
     @Override
     public String toString() {
         return String.format("RoundaboutIntersection[Branches=%d, Radius=%.1fm, Pos=(%.1f, %.1f)]",
-                getExpectedRoadCount(), radius, centerX, centerY);
+                getExpectedRoadCount(), radius, getCenterX(), getCenterY());
     }
 }

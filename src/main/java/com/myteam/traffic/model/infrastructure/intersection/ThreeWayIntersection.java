@@ -93,6 +93,6 @@ public class ThreeWayIntersection extends Intersection {
     @Override
     public String toString() {
         return String.format("ThreeWayIntersection[Type=%s, Pos=(%.1f, %.1f)]",
-                subType, centerX, centerY);
+                subType, getCenterX(), getCenterY());
     }
 }
