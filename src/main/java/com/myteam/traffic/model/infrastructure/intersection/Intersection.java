@@ -1,34 +1,33 @@
 package com.myteam.traffic.model.infrastructure.intersection;
 
+import com.myteam.traffic.model.infrastructure.ConnectionPoint;
+import com.myteam.traffic.model.infrastructure.IntersectionRenderData;
+import com.myteam.traffic.model.infrastructure.IntersectionRenderData.ArmData;
 import com.myteam.traffic.model.infrastructure.RoadSegment;
+import com.myteam.traffic.model.infrastructure.Lane;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 /**
- * Lớp trừu tượng Intersection là khung sườn cho tất cả các loại nút giao thông.
- * 
- * <p>Nhiệm vụ chính của lớp này là:
- * <ul>
- *   <li>Quản lý vị trí địa lý của nút giao (tọa độ tâm).</li>
- *   <li>Quản lý danh sách các đoạn đường ({@link RoadSegment}) hội tụ tại đây.</li>
- *   <li>Đảm bảo tính toàn vẹn dữ liệu thông qua việc giới hạn số lượng kết nối.</li>
- * </ul>
- * </p>
+ * Lớp trừu tượng Intersection — khung sườn cho tất cả các loại nút giao thông.
+ *
+ * Cập nhật so với phiên bản trước:
+ *  - connectRoad() nhận ConnectionPoint thay vì chỉ RoadSegment,
+ *    để biết segment gắn vào đầu nào (START/END) và từ góc nào.
+ *  - Thêm getRenderData() trả về dữ liệu thuần để UI vẽ,
+ *    không import Graphics/Swing trong package này.
+ *  - Giữ nguyên getConnectedRoads() để không break code cũ.
  */
 public abstract class Intersection {
 
-    /** Tọa độ X tâm nút giao. Dùng private để đảm bảo tính bất biến sau khi khởi tạo. */
     private final double centerX;
-    /** Tọa độ Y tâm nút giao. */
     private final double centerY;
 
-    /** Danh sách các đoạn đường thực tế đang kết nối vào nút giao này. */
-    private final List<RoadSegment> connectedRoads = new ArrayList<>();
+    /** Lưu ConnectionPoint thay vì RoadSegment thô — chứa đủ thông tin hình học. */
+    private final List<ConnectionPoint> connections = new ArrayList<>();
 
-    /**
-     * Khởi tạo một nút giao tại vị trí xác định.
-     */
     public Intersection(double centerX, double centerY) {
         this.centerX = centerX;
         this.centerY = centerY;
@@ -36,87 +35,122 @@ public abstract class Intersection {
 
     // ── Phương thức trừu tượng ───────────────────────────────
 
-    /**
-     * Trả về số lượng nhánh tối đa mà loại nút giao này hỗ trợ.
-     * Ví dụ: Ngã tư trả về 4, Ngã ba trả về 3.
-     */
-    public abstract int getExpectedRoadCount();
-
-    /**
-     * Trả về tên mô tả loại nút giao (ví dụ: "Roundabout", "Crossroad").
-     */
+    public abstract int    getExpectedRoadCount();
     public abstract String getIntersectionType();
 
-    // ── Quản lý đường kết nối ────────────────────────────────
+    // ── Quản lý kết nối ─────────────────────────────────────
 
     /**
-     * Thực hiện kết nối vật lý một đoạn đường vào nút giao.
-     * 
-     * <p>Cơ chế bảo vệ: Phương thức này sẽ kiểm tra số lượng đường hiện tại 
-     * so với {@link #getExpectedRoadCount()}. Nếu vượt quá, một ngoại lệ sẽ được ném ra 
-     * để tránh việc thiết lập bản đồ sai logic.</p>
-     * 
-     * @param road Đoạn đường cần kết nối.
-     * @throws IllegalStateException Nếu số lượng đường kết nối vượt quá giới hạn thiết kế.
+     * Kết nối một đoạn đường vào nút giao, kèm thông tin đầu nối.
+     *
+     * @param cp ConnectionPoint mô tả segment + đầu nối (START/END)
+     * @throws IllegalArgumentException nếu cp null
+     * @throws IllegalStateException    nếu vượt quá số nhánh cho phép
      */
-    public void connectRoad(RoadSegment road) {
-        if (road == null) throw new IllegalArgumentException("RoadSegment không được null");
-        if (connectedRoads.size() >= getExpectedRoadCount()) {
+    public void connectRoad(ConnectionPoint cp) {
+        if (cp == null) throw new IllegalArgumentException("ConnectionPoint không được null");
+        if (connections.size() >= getExpectedRoadCount()) {
             throw new IllegalStateException(String.format(
                 "Vượt quá số đường kết nối cho phép (%d) tại %s (%.1f, %.1f)",
                 getExpectedRoadCount(), getIntersectionType(), centerX, centerY));
         }
-        connectedRoads.add(road);
+        connections.add(cp);
     }
 
     /**
-     * Gỡ bỏ kết nối của một đoạn đường.
-     * Thường được gọi bởi hệ thống quản lý mạng lưới khi một con đường bị xóa.
+     * Overload tiện lợi: tự tạo ConnectionPoint từ segment + end.
+     * Dùng khi không cần giữ tham chiếu ConnectionPoint.
      */
+    public void connectRoad(RoadSegment road, ConnectionPoint.End end) {
+        connectRoad(new ConnectionPoint(road, end));
+    }
+
     public void disconnectRoad(RoadSegment road) {
-        connectedRoads.remove(road);
+        connections.removeIf(cp -> cp.getSegment() == road);
     }
 
-    /**
-     * Thay thế một đoạn đường cũ bằng đoạn đường mới trong danh sách kết nối.
-     * 
-     * <p>Hành động này cực kỳ quan trọng khi thực hiện cập nhật hạ tầng (như mở rộng làn đường) 
-     * mà không muốn phá vỡ cấu trúc của nút giao hiện tại.</p>
-     * 
-     * @return true nếu thay thế thành công, false nếu không tìm thấy đường cũ.
-     */
     public boolean replaceRoad(RoadSegment oldRoad, RoadSegment newRoad) {
-        int index = connectedRoads.indexOf(oldRoad);
-        if (index == -1) return false;
-        connectedRoads.set(index, newRoad);
-        return true;
-    }
-
-    /** 
-     * Trả về danh sách các đường kết nối dưới dạng Read-Only. 
-     * Ngăn chặn các tác động thay đổi danh sách từ bên ngoài không qua kiểm soát.
-     */
-    public List<RoadSegment> getConnectedRoads() {
-        return Collections.unmodifiableList(connectedRoads);
-    }
-
-    /** Trả về số lượng nhánh thực tế hiện có. */
-    public int getRoadCount() {
-        return connectedRoads.size();
+        for (int i = 0; i < connections.size(); i++) {
+            if (connections.get(i).getSegment() == oldRoad) {
+                ConnectionPoint old = connections.get(i);
+                connections.set(i, new ConnectionPoint(newRoad, old.getEnd()));
+                return true;
+            }
+        }
+        return false;
     }
 
     // ── Getters ──────────────────────────────────────────────
 
-    public double getCenterX() { return centerX; }
-    public double getCenterY() { return centerY; }
+    /** Tương thích ngược — trả về danh sách segment như cũ. */
+    public List<RoadSegment> getConnectedRoads() {
+        List<RoadSegment> list = new ArrayList<>();
+        for (ConnectionPoint cp : connections) list.add(cp.getSegment());
+        return Collections.unmodifiableList(list);
+    }
+
+    public List<ConnectionPoint> getConnections() {
+        return Collections.unmodifiableList(connections);
+    }
+
+    public int    getRoadCount() { return connections.size(); }
+    public double getCenterX()   { return centerX; }
+    public double getCenterY()   { return centerY; }
+
+    // ── Dữ liệu vẽ (Render Data) ─────────────────────────────
 
     /**
-     * Trả về chuỗi thông tin định danh nút giao phục vụ theo dõi hệ thống.
+     * Trả về toàn bộ dữ liệu hình học cần thiết để UI vẽ nút giao này.
+     *
+     * UI KHÔNG cần biết gì về ConnectionPoint hay Lane —
+     * chỉ cần dùng IntersectionRenderData là đủ.
+     *
+     * Cách dùng phía UI:
+     * <pre>
+     *   IntersectionRenderData d = intersection.getRenderData();
+     *   drawCircle(d.centerX, d.centerY, d.radius);
+     *   for (var arm : d.arms) {
+     *       drawRoad(arm.tipX, arm.tipY, arm.approachAngleDeg, arm.totalWidth);
+     *   }
+     * </pre>
      */
+    public IntersectionRenderData getRenderData() {
+        List<ArmData> arms = new ArrayList<>();
+        double maxWidth = 0;
+
+        for (ConnectionPoint cp : connections) {
+            RoadSegment seg = cp.getSegment();
+
+            // Tính tổng chiều rộng tất cả làn của segment này
+            double totalWidth = seg.getLanes().stream()
+                    .mapToDouble(Lane::getWidth)
+                    .sum();
+            maxWidth = Math.max(maxWidth, totalWidth);
+
+            // Điểm đầu nhánh = điểm chạm vào intersection
+            double tipX = cp.getX();
+            double tipY = cp.getY();
+
+            arms.add(new ArmData(
+                    tipX, tipY,
+                    Math.toDegrees(cp.getApproachAngle()),
+                    totalWidth,
+                    seg.getLanes().size(),
+                    seg
+            ));
+        }
+
+        // Bán kính vùng nút giao = nửa chiều rộng lớn nhất, tối thiểu 20
+        double radius = Math.max(20, maxWidth / 2.0);
+
+        return new IntersectionRenderData(centerX, centerY, radius,
+                getIntersectionType(), arms);
+    }
+
     @Override
     public String toString() {
         return String.format("%s tại (%.1f, %.1f) — %d/%d đường",
                 getIntersectionType(), centerX, centerY,
-                connectedRoads.size(), getExpectedRoadCount());
+                connections.size(), getExpectedRoadCount());
     }
 }

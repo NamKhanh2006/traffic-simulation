@@ -1,68 +1,39 @@
 package com.myteam.traffic.model.infrastructure;
 
 import java.util.*;
-import com.myteam.traffic.model.policy.*;
 
 /**
- * Lớp Lane đại diện cho một làn đường vật lý trong hệ thống hạ tầng giao thông.
- * 
- * <p>Mỗi làn đường là một đơn vị điều hướng cơ bản, chứa các quy tắc về:
- * <ul>
- *   <li><b>Hình học:</b> Chỉ số làn, chiều rộng và hướng di chuyển.</li>
- *   <li><b>Luật lệ:</b> Loại xe được phép, các hướng rẽ tại nút giao.</li>
- *   <li><b>Vạch kẻ:</b> Quy định khả năng chuyển làn (đè vạch) sang trái hoặc phải.</li>
- *   <li><b>Chính sách:</b> Giới hạn tốc độ riêng biệt cho từng làn.</li>
- * </ul>
+ * Làn đường vật lý — fully immutable.
+ * Mọi thay đổi đều tạo object mới qua wither methods.
  */
-public class Lane {
+public final class Lane {
 
-    /** Các kiểu vạch kẻ đường xác định khả năng tương tác giữa các làn kề nhau. */
+    // ── Enums ─────────────────────────────────────────────────
+
     public enum MarkingType {
-        NONE,           // Không có vạch (thường dùng ở trong nút giao)
-        DASHED,         // Vạch đứt đoạn (cho phép chuyển làn tự do)
-        SOLID,          // Vạch liền đơn (cấm chuyển làn)
-        DOUBLE_SOLID,   // Vạch liền đôi (cấm đè vạch tuyệt đối)
-        YELLOW_SOLID,   // Vạch vàng liền (thường phân chia chiều đường)
-        /** Vạch kép: Bên trái nét đứt, bên phải nét liền. Xe từ làn này có thể sang trái. */
-        LEFT_DASHED_RIGHT_SOLID, 
-        /** Vạch kép: Bên trái nét liền, bên phải nét đứt. Xe từ làn này có thể sang phải. */
-        LEFT_SOLID_RIGHT_DASHED 
+        NONE, DASHED, SOLID, DOUBLE_SOLID, YELLOW_SOLID,
+        /** Nét đứt bên trái, nét liền bên phải — xe bên trái vạch được sang. */
+        LEFT_DASHED_RIGHT_SOLID,
+        /** Nét liền bên trái, nét đứt bên phải — xe bên phải vạch được sang. */
+        LEFT_SOLID_RIGHT_DASHED
     }
 
-    /** Phân loại phương tiện để áp dụng quy tắc làn ưu tiên hoặc làn cấm. */
     public enum VehicleCategory { CAR, MOTORBIKE, BUS, BICYCLE, EMERGENCY, TRUCK }
+    public enum Direction        { FORWARD, BACKWARD }
+    public enum Movement         { STRAIGHT, LEFT, RIGHT, U_TURN }
 
-    /** Hướng lưu thông của làn so với hướng vector của đoạn đường (RoadSegment). */
-    public enum Direction { FORWARD, BACKWARD }
+    // ── Fields (tất cả final) ─────────────────────────────────
 
-    /** Các hướng di chuyển hợp lệ khi phương tiện đi đến cuối làn này (thường tại nút giao). */
-    public enum Movement { STRAIGHT, LEFT, RIGHT, U_TURN }
+    private final int                  index;
+    private final Direction            direction;
+    private final double               width;
+    private final Set<VehicleCategory> allowedVehicles;
+    private final Set<Movement>        allowedMovements;
+    private final MarkingType          leftMarking;
+    private final MarkingType          rightMarking;
 
-    // ── Fields ───────────────────────────────────────────────
+    // ── Constructor ───────────────────────────────────────────
 
-    private final int index;                // Chỉ số thứ tự của làn (tính từ trái sang phải hoặc ngược lại)
-    private Direction direction;            // Hướng di chuyển chính của làn
-    private double width;                   // Chiều rộng làn đường (mét)
-    private SpeedPolicy customSpeedPolicy;  // Chính sách tốc độ đặc thù cho làn này
-
-    private final Set<VehicleCategory> allowedVehicles; // Tập hợp các xe được phép chạy
-    private final Set<Movement>        allowedMovements; // Các hướng rẽ được phép từ làn này
-    private MarkingType leftMarking;        // Vạch kẻ ngăn cách phía bên trái làn
-    private MarkingType rightMarking;       // Vạch kẻ ngăn cách phía bên phải làn
-
-    // ── Constructor ──────────────────────────────────────────
-
-    /**
-     * Khởi tạo một đối tượng Lane với đầy đủ các thuộc tính cấu hình.
-     * 
-     * @param index Chỉ số của làn (không được phép âm).
-     * @param direction Hướng lưu thông chính.
-     * @param width Chiều rộng vật lý (phải > 0).
-     * @param vehicles Danh sách xe được phép (null hoặc trống sẽ tạo tập hợp rỗng).
-     * @param movements Các hướng di chuyển cho phép (null hoặc trống sẽ tạo tập hợp rỗng).
-     * @param leftMarking Vạch kẻ phía bên trái làn.
-     * @param rightMarking Vạch kẻ phía bên phải làn.
-     */
     public Lane(int index, Direction direction, double width,
                 Set<VehicleCategory> vehicles, Set<Movement> movements,
                 MarkingType leftMarking, MarkingType rightMarking) {
@@ -76,110 +47,138 @@ public class Lane {
         this.leftMarking  = (leftMarking  == null) ? MarkingType.NONE : leftMarking;
         this.rightMarking = (rightMarking == null) ? MarkingType.NONE : rightMarking;
 
-        // Sử dụng EnumSet để tối ưu hiệu năng và bộ nhớ so với HashSet thông thường
-        this.allowedVehicles = (vehicles  == null || vehicles.isEmpty())
+        this.allowedVehicles  = (vehicles  == null || vehicles.isEmpty())
                 ? EnumSet.noneOf(VehicleCategory.class) : EnumSet.copyOf(vehicles);
         this.allowedMovements = (movements == null || movements.isEmpty())
                 ? EnumSet.noneOf(Movement.class) : EnumSet.copyOf(movements);
     }
 
-    // ── Quyền ưu tiên ────────────────────────────────────────
+    // ── Wither Methods ────────────────────────────────────────
 
-    /**
-     * Xác định xem một phương tiện có quyền ưu tiên đặc biệt (Emergency Pass) hay không.
-     * 
-     * @param cat Loại xe cần kiểm tra.
-     * @param isOnDuty Trạng thái xe đang thực hiện nhiệm vụ khẩn cấp (có còi/đèn).
-     * @return true nếu phương tiện được phép bỏ qua các ràng buộc giao thông thông thường.
-     */
+    public Lane withWidth(double newWidth) {
+        return new Lane(index, direction, newWidth,
+                allowedVehicles, allowedMovements, leftMarking, rightMarking);
+    }
+
+    public Lane withDirection(Direction newDirection) {
+        return new Lane(index, newDirection, width,
+                allowedVehicles, allowedMovements, leftMarking, rightMarking);
+    }
+
+    public Lane withLeftMarking(MarkingType m) {
+        return new Lane(index, direction, width, allowedVehicles, allowedMovements,
+                (m == null) ? MarkingType.NONE : m, rightMarking);
+    }
+
+    public Lane withRightMarking(MarkingType m) {
+        return new Lane(index, direction, width, allowedVehicles, allowedMovements,
+                leftMarking, (m == null) ? MarkingType.NONE : m);
+    }
+
+    /** Trả về Lane mới với thêm một loại xe được phép. */
+    public Lane withAddedVehicle(VehicleCategory cat) {
+        Set<VehicleCategory> updated = EnumSet.copyOf(allowedVehicles);
+        updated.add(cat);
+        return new Lane(index, direction, width,
+                updated, allowedMovements, leftMarking, rightMarking);
+    }
+
+    /** Trả về Lane mới với một loại xe bị xóa khỏi danh sách cho phép. */
+    public Lane withRemovedVehicle(VehicleCategory cat) {
+        Set<VehicleCategory> updated = allowedVehicles.isEmpty()
+                ? EnumSet.noneOf(VehicleCategory.class) : EnumSet.copyOf(allowedVehicles);
+        updated.remove(cat);
+        return new Lane(index, direction, width,
+                updated, allowedMovements, leftMarking, rightMarking);
+    }
+
+    /** Trả về Lane mới với thêm một hướng di chuyển được phép. */
+    public Lane withAddedMovement(Movement mvt) {
+        Set<Movement> updated = EnumSet.copyOf(allowedMovements);
+        updated.add(mvt);
+        return new Lane(index, direction, width,
+                allowedVehicles, updated, leftMarking, rightMarking);
+    }
+
+    /** Trả về Lane mới với một hướng di chuyển bị xóa. */
+    public Lane withRemovedMovement(Movement mvt) {
+        Set<Movement> updated = allowedMovements.isEmpty()
+                ? EnumSet.noneOf(Movement.class) : EnumSet.copyOf(allowedMovements);
+        updated.remove(mvt);
+        return new Lane(index, direction, width,
+                allowedVehicles, updated, leftMarking, rightMarking);
+    }
+
+    // ── Logic quyền ưu tiên ───────────────────────────────────
+
     private boolean isPriorityPass(VehicleCategory cat, boolean isOnDuty) {
         return cat == VehicleCategory.EMERGENCY && isOnDuty;
     }
 
-    // ── Kiểm tra vạch kẻ ─────────────────────────────────────
+    // ── Logic vạch kẻ ─────────────────────────────────────────
 
     /**
-     * Kiểm tra khả năng đè vạch bên trái để thực hiện hành vi chuyển làn hoặc rẽ.
-     * 
-     * @param cat Loại xe thực hiện hành vi.
-     * @param isOnDuty Xe có đang làm nhiệm vụ khẩn cấp hay không.
-     * @return true nếu hành vi băng qua vạch bên trái là hợp lệ.
+     * Kiểm tra xe có thể đổi sang làn bên TRÁI không.
+     * leftMarking là vạch nằm bên trái của làn này.
+     * LEFT_SOLID_RIGHT_DASHED: nét đứt nằm về phía làn hiện tại → được qua.
      */
     public boolean canCrossLeft(VehicleCategory cat, boolean isOnDuty) {
         if (isPriorityPass(cat, isOnDuty)) return true;
         return switch (leftMarking) {
-            case DASHED                 -> true;
-            case LEFT_DASHED_RIGHT_SOLID -> true; // Phần nét đứt nằm bên phía làn này
-            default                     -> false;
+            case DASHED, LEFT_SOLID_RIGHT_DASHED -> true;
+            default                              -> false;
         };
     }
 
     /**
-     * Kiểm tra khả năng đè vạch bên phải để thực hiện hành vi chuyển làn.
-     * 
-     * @param cat Loại xe thực hiện hành vi.
-     * @param isOnDuty Xe có đang làm nhiệm vụ khẩn cấp hay không.
-     * @return true nếu hành vi băng qua vạch bên phải là hợp lệ.
+     * Kiểm tra xe có thể đổi sang làn bên PHẢI không.
+     * rightMarking là vạch nằm bên phải của làn này.
+     * LEFT_DASHED_RIGHT_SOLID: nét đứt nằm về phía làn hiện tại → được qua.
      */
     public boolean canCrossRight(VehicleCategory cat, boolean isOnDuty) {
         if (isPriorityPass(cat, isOnDuty)) return true;
         return switch (rightMarking) {
-            case DASHED                  -> true;
-            case LEFT_SOLID_RIGHT_DASHED -> true; // Phần nét đứt nằm bên phía làn này
-            default                      -> false;
+            case DASHED, LEFT_DASHED_RIGHT_SOLID -> true;
+            default                              -> false;
         };
     }
 
-    // ── Kiểm tra xe và hướng đi ──────────────────────────────
-
-    /**
-     * Kiểm tra xem một loại phương tiện cụ thể có được phép đi vào làn này hay không.
-     */
+    /** Kiểm tra loại xe có được phép vào làn này không. */
     public boolean allowsVehicle(VehicleCategory cat, boolean isOnDuty) {
         if (isPriorityPass(cat, isOnDuty)) return true;
         return allowedVehicles.contains(cat);
     }
 
-    /**
-     * Kiểm tra xem một hướng di chuyển (thẳng, rẽ trái, rẽ phải...) có được phép từ làn này hay không.
-     */
-    public boolean allowsMovement(Movement movement, VehicleCategory cat, boolean isOnDuty) {
+    /** Kiểm tra hướng di chuyển có được phép từ làn này không. */
+    public boolean allowsMovement(Movement mvt, VehicleCategory cat, boolean isOnDuty) {
         if (isPriorityPass(cat, isOnDuty)) return true;
-        return allowedMovements.contains(movement);
+        return allowedMovements.contains(mvt);
     }
 
-    // ── Getters & Setters ─────────────────────────────────────
+    // ── Getters ───────────────────────────────────────────────
 
-    public int      getIndex()     { return index;     }
-    public Direction getDirection() { return direction; }
-    public double    getWidth()     { return width;     }
+    public int                  getIndex()           { return index;           }
+    public Direction            getDirection()        { return direction;       }
+    public double               getWidth()            { return width;           }
+    public MarkingType          getLeftMarking()      { return leftMarking;     }
+    public MarkingType          getRightMarking()     { return rightMarking;    }
 
-    public MarkingType getLeftMarking()  { return leftMarking;  }
-    public MarkingType getRightMarking() { return rightMarking; }
+    public Set<VehicleCategory> getAllowedVehicles()  {
+        return Collections.unmodifiableSet(allowedVehicles);
+    }
 
-    /** Trả về danh sách xe cho phép dưới dạng Read-Only để bảo vệ dữ liệu nội bộ. */
-    public Set<VehicleCategory> getAllowedVehicles()  { return Collections.unmodifiableSet(allowedVehicles);  }
-    
-    /** Trả về các hướng di chuyển cho phép dưới dạng Read-Only. */
-    public Set<Movement>        getAllowedMovements() { return Collections.unmodifiableSet(allowedMovements); }
+    /** Getter bị thiếu trong version trước — cần thiết để AI query hướng rẽ. */
+    public Set<Movement>        getAllowedMovements() {
+        return Collections.unmodifiableSet(allowedMovements);
+    }
 
-    public SpeedPolicy getCustomSpeedPolicy()              { return customSpeedPolicy;  }
-    public void setCustomSpeedPolicy(SpeedPolicy policy)   { this.customSpeedPolicy = policy; }
+    // ── toString ──────────────────────────────────────────────
 
-    public void setDirection(Direction direction)          { this.direction    = direction;   }
-    public void setWidth(double width)                      { this.width        = width;       }
-    public void setLeftMarking(MarkingType m)               { this.leftMarking  = m;           }
-    public void setRightMarking(MarkingType m)              { this.rightMarking = m;           }
-
-    /**
-     * Trả về chuỗi mô tả tóm tắt trạng thái làn đường để phục vụ logging và debug.
-     */
     @Override
     public String toString() {
-        String speedStr = (customSpeedPolicy != null)
-                ? customSpeedPolicy.getLimit() + "km/h" : "Default";
-        return String.format(
-                "Lane[%d] | %s | Width: %.1f | Speed: %s | L: %s | R: %s",
-                index, direction, width, speedStr, leftMarking, rightMarking);
+        return String.format("Lane[%d] | %s | %.1fm | L:%s R:%s | %s | %s",
+                index, direction, width,
+                leftMarking, rightMarking,
+                allowedVehicles, allowedMovements);
     }
 }
