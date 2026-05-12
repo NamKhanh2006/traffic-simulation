@@ -166,4 +166,10 @@ public class RoadNetwork {
         return String.format("RoadNetwork[Segments=%d, Intersections=%d]",
                 segments.size(), intersections.size());
     }
+
+    /** Xóa toàn bộ mạng lưới (Dùng cho tính năng Undo) */
+    public void clear() {
+        segments.clear();
+        intersections.clear();
+    }
 }

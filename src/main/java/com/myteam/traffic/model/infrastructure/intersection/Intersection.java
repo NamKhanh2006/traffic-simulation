@@ -114,20 +114,24 @@ public abstract class Intersection {
      *   }
      * </pre>
      */
+    // --- TÌM VÀ THAY THẾ PHƯƠNG THỨC getRenderData() TRONG Intersection.java ---
+
     public IntersectionRenderData getRenderData() {
         List<ArmData> arms = new ArrayList<>();
         double maxWidth = 0;
+        double totalWidthAllArms = 0;
 
         for (ConnectionPoint cp : connections) {
             RoadSegment seg = cp.getSegment();
 
-            // Tính tổng chiều rộng tất cả làn của segment này
+            // SỬA LỖI SCALE: Đổi từ hệ mét (3.5) sang hệ đồ họa (20.0) để đồng bộ với UI
             double totalWidth = seg.getLanes().stream()
-                    .mapToDouble(Lane::getWidth)
+                    .mapToDouble(l -> (l.getWidth() / 3.5) * 20.0)
                     .sum();
-            maxWidth = Math.max(maxWidth, totalWidth);
 
-            // Điểm đầu nhánh = điểm chạm vào intersection
+            maxWidth = Math.max(maxWidth, totalWidth);
+            totalWidthAllArms += totalWidth;
+
             double tipX = cp.getX();
             double tipY = cp.getY();
 
@@ -140,8 +144,16 @@ public abstract class Intersection {
             ));
         }
 
-        // Bán kính vùng nút giao = nửa chiều rộng lớn nhất, tối thiểu 20
-        double radius = Math.max(20, maxWidth / 2.0);
+        // TỰ ĐỘNG PHÌNH TO NÚT GIAO DỰA TRÊN SỐ NHÁNH
+        // Nếu có 4 nhánh, hệ số = 1.0 (Bình thường). Nếu 8 nhánh, hệ số = 2.0 (To gấp đôi)
+        double branchMultiplier = Math.max(1.0, connections.size() / 4.0);
+        double radius = Math.max(25, (maxWidth / 1.8) * branchMultiplier);
+
+        // Nếu là Vòng xuyến, làm cho nó bự hơn nữa để tạo đảo tròn ở giữa
+        if (getIntersectionType().contains("Vòng xuyến")) {
+            // Chu vi vòng xuyến phải đủ sức chứa toàn bộ bề rộng các nhánh gộp lại
+            radius = Math.max(50, (totalWidthAllArms / (Math.PI * 1.2)) * 1.2);
+        }
 
         return new IntersectionRenderData(centerX, centerY, radius,
                 getIntersectionType(), arms);
