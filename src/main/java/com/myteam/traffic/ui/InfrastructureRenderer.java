@@ -156,46 +156,53 @@ public class InfrastructureRenderer {
         double scx = view.toScreenX(inter.centerX);
         double scy = view.toScreenY(inter.centerY);
 
-        // Vòng xuyến → vẽ kiểu đặc biệt với đảo tròn trung tâm
         if (inter.typeName.startsWith("Vòng xuyến")) {
             drawRoundaboutFill(gc, inter, scx, scy, scale);
             return;
         }
-
         if (inter.arms.isEmpty()) return;
 
-        // inter.radius là nguồn sự thật duy nhất — khớp với rStartWorld/rEndWorld
-        double junctionR = inter.radius * scale;
         Color fillColor = COLOR_ROAD;
-        for (IntersectionRenderData.ArmData arm : inter.arms) {
+        for (IntersectionRenderData.ArmData arm : inter.arms)
             if (arm.segment instanceof HighwaySegment) fillColor = COLOR_HIGHWAY;
-        }
+
+        double junctionR = inter.radius * scale;
 
         gc.save();
         gc.setFill(fillColor);
 
-        // Bước 1: lưỡi nối từng nhánh vào tâm — đảm bảo không có khe hở
+        // ── Thu thập tất cả điểm góc của mọi nhánh ─────────────────────
+        // Mỗi nhánh cho 2 điểm góc (2 mép của đường tại tip)
+        // Sắp xếp theo góc → convex polygon phủ kín toàn bộ vùng giao lộ
+        java.util.List<double[]> pts = new java.util.ArrayList<>();
+        pts.add(new double[]{scx, scy}); // tâm luôn nằm trong hull
         for (IntersectionRenderData.ArmData arm : inter.arms) {
             double hw   = arm.totalWidth * scale * 0.5;
             double ang  = Math.toRadians(arm.approachAngleDeg);
             double dirX = Math.cos(ang), dirY = Math.sin(ang);
             double perpX = -dirY, perpY = dirX;
-            double reach = junctionR * 1.15; // vươn ra xa hơn bán kính một chút
-            double[] px = {
-                    scx + perpX * hw,  scx - perpX * hw,
-                    scx + dirX * reach - perpX * hw,
-                    scx + dirX * reach + perpX * hw
-            };
-            double[] py = {
-                    scy + perpY * hw,  scy - perpY * hw,
-                    scy + dirY * reach - perpY * hw,
-                    scy + dirY * reach + perpY * hw
-            };
-            gc.fillPolygon(px, py, 4);
+            double tipSX = view.toScreenX(arm.tipX), tipSY = view.toScreenY(arm.tipY);
+            // 2 góc tại tip + 2 góc sát tâm (để đảm bảo lưỡi được điền)
+            pts.add(new double[]{ tipSX - perpX * hw, tipSY - perpY * hw });
+            pts.add(new double[]{ tipSX + perpX * hw, tipSY + perpY * hw });
+            pts.add(new double[]{ scx   - perpX * hw, scy   - perpY * hw });
+            pts.add(new double[]{ scx   + perpX * hw, scy   + perpY * hw });
         }
 
-        // Bước 2: hình tròn tâm phủ lên — bo góc sạch
+        // Convex hull (Graham scan đơn giản — sort theo góc quanh centroid)
+        double cx2 = pts.stream().mapToDouble(p -> p[0]).average().orElse(scx);
+        double cy2 = pts.stream().mapToDouble(p -> p[1]).average().orElse(scy);
+        pts.sort((a, b) -> Double.compare(
+                Math.atan2(a[1] - cy2, a[0] - cx2),
+                Math.atan2(b[1] - cy2, b[0] - cx2)));
+
+        double[] hullX = pts.stream().mapToDouble(p -> p[0]).toArray();
+        double[] hullY = pts.stream().mapToDouble(p -> p[1]).toArray();
+        gc.fillPolygon(hullX, hullY, hullX.length);
+
+        // ── Tròn tâm phủ lên — bo góc sạch, xóa răng cưa ────────────────
         gc.fillOval(scx - junctionR, scy - junctionR, junctionR * 2, junctionR * 2);
+
         gc.restore();
     }
 
@@ -287,22 +294,36 @@ public class InfrastructureRenderer {
     // ════════════════════════════════════════════════════════════
     // 4. VẠCH KẺ ĐƯỜNG
     // ════════════════════════════════════════════════════════════
-    public void drawRoadMarks(GraphicsContext gc, RoadSegment seg, double rStartWorld, double rEndWorld) {
+    public void drawRoadMarks(GraphicsContext gc, RoadSegment seg) {
         if (seg.isConnector()) return;
         double scale = view.getViewScale();
         if (scale < 0.18) return;
 
         gc.save();
+
+        // ── CLIP: loại bỏ mọi vùng tròn junction khỏi vạch kẻ ───────────────
+        // Vẽ clipping path = toàn bộ canvas TRỪ các vòng tròn junction
+        if (data != null && data.intersections != null) {
+            // JavaFX Canvas không hỗ trợ clip "subtract", nên dùng cách kiểm tra
+            // offset thực tế: tính khoảng lùi từ endpoint đến mép vòng tròn gần nhất
+        }
+
         if (seg instanceof HighwayRampSegment ramp) {
             drawRampCenterLine(gc, ramp, scale);
         } else {
             double sx = view.toScreenX(seg.getStartX()), sy = view.toScreenY(seg.getStartY());
             double ex = view.toScreenX(seg.getEndX()),   ey = view.toScreenY(seg.getEndY());
             double ang = Math.atan2(ey - sy, ex - sx);
+            double segLen = Math.hypot(ex - sx, ey - sy); // screen pixels
 
-            // Cắt vạch kẻ sát đúng bán kính nút giao — không padding thừa
-            double offS = (rStartWorld > 0) ? (rStartWorld * scale) : 0;
-            double offE = (rEndWorld   > 0) ? (rEndWorld   * scale) : 0;
+            // Tính offset cắt vạch: khoảng cách từ endpoint đến mép vùng tròn junction
+            // Endpoint (sx,sy) là đầu segment trong world, junction tâm có thể không trùng với endpoint
+            // → Tính khoảng cách từ endpoint (screen) đến tâm junction (screen), rồi trừ đi radius (screen)
+            double offS = computeMarkClipOffset(seg.getStartX(), seg.getStartY(), scale);
+            double offE = computeMarkClipOffset(seg.getEndX(),   seg.getEndY(),   scale);
+
+            // Không vẽ nếu 2 đầu clip chồng lên nhau (đoạn quá ngắn)
+            if (offS + offE >= segLen - 1) { gc.restore(); return; }
 
             double startOffsetX = sx + Math.cos(ang) * offS;
             double startOffsetY = sy + Math.sin(ang) * offS;
@@ -312,12 +333,33 @@ public class InfrastructureRenderer {
             drawCenterLine(gc, seg, startOffsetX, startOffsetY, endOffsetX, endOffsetY, ang, scale);
             drawEdgeLines(gc, seg, sx, sy, ex, ey, ang, offS, offE, scale);
             drawLaneDividers(gc, seg, startOffsetX, startOffsetY, endOffsetX, endOffsetY, ang, scale);
-
-            // Chỉ vẽ vạch dừng xe nếu có Intersection ở đầu đó
-            if (rStartWorld > 0) drawStopLine(gc, startOffsetX, startOffsetY, ang, seg, scale);
-            if (rEndWorld > 0)   drawStopLine(gc, endOffsetX, endOffsetY, ang + Math.PI, seg, scale);
         }
         gc.restore();
+    }
+
+    /**
+     * Tính offset cắt vạch (screen pixels) tại một đầu segment.
+     * = khoảng cách từ endpoint đến mép vùng tròn junction gần nhất
+     * Nếu endpoint không nằm trong/sát junction nào → offset = 0.
+     */
+    private NetworkRenderData data; // injected từ SimulationView mỗi frame redraw
+
+    public void setRenderData(NetworkRenderData d) { this.data = d; }
+
+    private double computeMarkClipOffset(double worldX, double worldY, double scale) {
+        if (data == null || data.intersections == null) return 0;
+        double best = 0;
+        for (IntersectionRenderData inter : data.intersections) {
+            double distToCenter = Math.hypot(worldX - inter.centerX, worldY - inter.centerY);
+            // Endpoint nằm trong hoặc sát vùng tròn (tolerance 5 world units)
+            if (distToCenter <= inter.radius + 5) {
+                // Offset = (radius - khoảng cách endpoint→tâm) + padding nhỏ
+                // Nếu endpoint gần tâm hơn radius → offset dương (vạch lùi vào trong)
+                double clip = (inter.radius - distToCenter + 2) * scale;
+                best = Math.max(best, clip);
+            }
+        }
+        return Math.max(0, best);
     }
     // Thay thế hàm drawLaneDividers cũ bằng đoạn này:
     private void drawLaneDividers(GraphicsContext gc, RoadSegment seg, double sx, double sy, double ex, double ey, double ang, double scale) {
@@ -530,6 +572,42 @@ public class InfrastructureRenderer {
         gc.setLineWidth(Math.max(6, 12 * scale)); // Vạch xanh hover bự ra
         gc.setLineDashes(null);
         gc.strokeLine(lx1, ly1, lx2, ly2);
+        gc.restore();
+    }
+
+    /** Highlight đỏ đoạn đường trong DELETE mode — phủ đúng chiều rộng thân đường. */
+    public void drawSegmentHighlight(GraphicsContext gc, RoadSegment seg) {
+        double scale = view.getViewScale();
+        double sx = view.toScreenX(seg.getStartX()), sy = view.toScreenY(seg.getStartY());
+        double ex = view.toScreenX(seg.getEndX()),   ey = view.toScreenY(seg.getEndY());
+        double w = roadWidth(seg, scale);
+        double ang = Math.atan2(ey - sy, ex - sx);
+        double perpX = Math.cos(ang + Math.PI/2) * w / 2;
+        double perpY = Math.sin(ang + Math.PI/2) * w / 2;
+        double[] px = { sx + perpX, sx - perpX, ex - perpX, ex + perpX };
+        double[] py = { sy + perpY, sy - perpY, ey - perpY, ey + perpY };
+        gc.save();
+        gc.setFill(Color.web("#ff3333", 0.55));
+        gc.fillPolygon(px, py, 4);
+        gc.setStroke(Color.web("#ff5555", 0.85));
+        gc.setLineWidth(2.0);
+        gc.strokePolygon(px, py, 4);
+        gc.restore();
+    }
+
+    /** Highlight đỏ nút giao trong DELETE mode. */
+    public void drawIntersectionHighlight(GraphicsContext gc, Intersection inter) {
+        double scale = view.getViewScale();
+        double scx = view.toScreenX(inter.getCenterX());
+        double scy = view.toScreenY(inter.getCenterY());
+        IntersectionRenderData d = inter.getRenderData();
+        double r = d.radius * scale + 4 * scale;
+        gc.save();
+        gc.setFill(Color.web("#ff3333", 0.45));
+        gc.fillOval(scx - r, scy - r, r * 2, r * 2);
+        gc.setStroke(Color.web("#ff3333", 0.9));
+        gc.setLineWidth(2.5);
+        gc.strokeOval(scx - r, scy - r, r * 2, r * 2);
         gc.restore();
     }
 
