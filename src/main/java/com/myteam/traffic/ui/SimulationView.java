@@ -311,7 +311,10 @@ public class SimulationView extends Canvas {
 
         // Ghost preview cho mode PLACE_INTERSECTION
         if (currentMode == InteractionType.PLACE_INTERSECTION && lastMouseX > 0) {
-            double wx = snap(toWorldX(lastMouseX)), wy = snap(toWorldY(lastMouseY));
+            double wx = toWorldX(lastMouseX), wy = toWorldY(lastMouseY);
+            // Snap preview vào endpoint gần nhất nếu có
+            double[] ep = snapToEndpoint(wx, wy, 50.0 / scale, Double.MAX_VALUE, Double.MAX_VALUE);
+            if (ep != null) { wx = ep[0]; wy = ep[1]; }
             double sx = toScreenX(wx), sy = toScreenY(wy);
             double previewR = getPreviewRadius() * scale;
             gc.setStroke(Color.web("#e8d44d", 0.55));
@@ -505,6 +508,7 @@ public class SimulationView extends Canvas {
             } else if (currentMode == InteractionType.PLACE_INTERSECTION) {
                 lastMouseX = e.getX(); lastMouseY = e.getY(); redraw();
             } else if (currentMode == InteractionType.DELETE) {
+                if (network == null) return;
                 RoadSegment  newSeg   = hitTestSegment(wx, wy);
                 Intersection newInter = (newSeg == null)
                         ? network.findNearestIntersection(wx, wy, 30.0 / scale) : null;
@@ -544,8 +548,14 @@ public class SimulationView extends Canvas {
                 }
 
             } else if (currentMode == InteractionType.PLACE_INTERSECTION) {
-                double rawX = toWorldX(e.getX()), rawY = toWorldY(e.getY());
-                double wx = snap(rawX), wy = snap(rawY);
+                double wx = toWorldX(e.getX()), wy = toWorldY(e.getY());
+                // Snap vào endpoint đường gần nhất nếu có (để đặt junction sát đầu đường)
+                double[] ep = snapToEndpoint(wx, wy, 50.0 / scale, Double.MAX_VALUE, Double.MAX_VALUE);
+                if (ep != null) { wx = ep[0]; wy = ep[1]; }
+                else {
+                    Intersection near = network.findNearestIntersection(wx, wy, 40.0 / scale);
+                    if (near != null) { wx = near.getCenterX(); wy = near.getCenterY(); }
+                }
                 saveSnapshot();
                 placeIntersectionAt(wx, wy);
                 updateRenderData();
@@ -798,10 +808,10 @@ public class SimulationView extends Canvas {
 
     /**
      * Đặt giao lộ tại tọa độ world (wx, wy) theo loại đang được chọn.
-     * Nếu đã có giao lộ gần đó (trong 40 world units) thì không tạo mới.
+     * Guard radius nhỏ (25 world units) — không phụ thuộc scale.
      */
     private void placeIntersectionAt(double wx, double wy) {
-        if (network.findNearestIntersection(wx, wy, 40.0) != null) return;
+        if (network.findNearestIntersection(wx, wy, 25.0) != null) return;
 
         com.myteam.traffic.model.infrastructure.intersection.Intersection inter;
         switch (intersectionTypeToPlace) {
