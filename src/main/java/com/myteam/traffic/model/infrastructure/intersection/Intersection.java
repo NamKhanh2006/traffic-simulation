@@ -51,8 +51,8 @@ public abstract class Intersection {
         if (cp == null) throw new IllegalArgumentException("ConnectionPoint không được null");
         if (connections.size() >= getExpectedRoadCount()) {
             throw new IllegalStateException(String.format(
-                "Vượt quá số đường kết nối cho phép (%d) tại %s (%.1f, %.1f)",
-                getExpectedRoadCount(), getIntersectionType(), centerX, centerY));
+                    "Vượt quá số đường kết nối cho phép (%d) tại %s (%.1f, %.1f)",
+                    getExpectedRoadCount(), getIntersectionType(), centerX, centerY));
         }
         connections.add(cp);
     }
@@ -144,10 +144,9 @@ public abstract class Intersection {
             ));
         }
 
-        // TỰ ĐỘNG PHÌNH TO NÚT GIAO DỰA TRÊN SỐ NHÁNH
-        // Nếu có 4 nhánh, hệ số = 1.0 (Bình thường). Nếu 8 nhánh, hệ số = 2.0 (To gấp đôi)
-        double branchMultiplier = Math.max(1.0, connections.size() / 4.0);
-        double radius = Math.max(25, (maxWidth / 1.8) * branchMultiplier);
+        // Bán kính = nửa chiều rộng nhánh lớn nhất, nhân thêm hệ số để phủ kín góc chéo
+        // Khi 2 đường cắt nhau 45°, cần bán kính = halfWidth / sin(45°) ≈ halfWidth * 1.42
+        double radius = Math.max(25, maxWidth / 1.4);
 
         // Nếu là Vòng xuyến, làm cho nó bự hơn nữa để tạo đảo tròn ở giữa
         if (getIntersectionType().contains("Vòng xuyến")) {

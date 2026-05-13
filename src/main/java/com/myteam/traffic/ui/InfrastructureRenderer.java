@@ -164,44 +164,37 @@ public class InfrastructureRenderer {
 
         if (inter.arms.isEmpty()) return;
 
-        // Tính bán kính vùng giao lộ = nửa chiều rộng nhánh lớn nhất (theo world units × scale)
-        double maxHalfWidth = 0;
+        // inter.radius là nguồn sự thật duy nhất — khớp với rStartWorld/rEndWorld
+        double junctionR = inter.radius * scale;
         Color fillColor = COLOR_ROAD;
         for (IntersectionRenderData.ArmData arm : inter.arms) {
-            // arm.totalWidth là tổng world-unit width (số làn × 3.5m)
-            double hw = arm.totalWidth * scale; // 1 world unit = 1 screen pixel tại scale=1
-            maxHalfWidth = Math.max(maxHalfWidth, hw);
             if (arm.segment instanceof HighwaySegment) fillColor = COLOR_HIGHWAY;
         }
-        double junctionR = Math.max(maxHalfWidth * 0.7, 8 * scale);
 
         gc.save();
         gc.setFill(fillColor);
 
-        // Bước 1: hình tròn nền
-        gc.fillOval(scx - junctionR, scy - junctionR, junctionR * 2, junctionR * 2);
-
-        // Bước 2: lưỡi nối từng nhánh vào hình tròn
+        // Bước 1: lưỡi nối từng nhánh vào tâm — đảm bảo không có khe hở
         for (IntersectionRenderData.ArmData arm : inter.arms) {
-            double hw = arm.totalWidth * scale * 0.5;
-            double ang = Math.toRadians(arm.approachAngleDeg);
+            double hw   = arm.totalWidth * scale * 0.5;
+            double ang  = Math.toRadians(arm.approachAngleDeg);
             double dirX = Math.cos(ang), dirY = Math.sin(ang);
             double perpX = -dirY, perpY = dirX;
-
+            double reach = junctionR * 1.15; // vươn ra xa hơn bán kính một chút
             double[] px = {
                     scx + perpX * hw,  scx - perpX * hw,
-                    scx + dirX * junctionR * 1.4 - perpX * hw,
-                    scx + dirX * junctionR * 1.4 + perpX * hw
+                    scx + dirX * reach - perpX * hw,
+                    scx + dirX * reach + perpX * hw
             };
             double[] py = {
                     scy + perpY * hw,  scy - perpY * hw,
-                    scy + dirY * junctionR * 1.4 - perpY * hw,
-                    scy + dirY * junctionR * 1.4 + perpY * hw
+                    scy + dirY * reach - perpY * hw,
+                    scy + dirY * reach + perpY * hw
             };
             gc.fillPolygon(px, py, 4);
         }
 
-        // Bước 3: vẽ lại tròn tâm để bo góc
+        // Bước 2: hình tròn tâm phủ lên — bo góc sạch
         gc.fillOval(scx - junctionR, scy - junctionR, junctionR * 2, junctionR * 2);
         gc.restore();
     }
@@ -209,52 +202,49 @@ public class InfrastructureRenderer {
     /** Vẽ vòng xuyến với đảo tròn trung tâm + lane tròn bao quanh */
     private void drawRoundaboutFill(GraphicsContext gc, IntersectionRenderData inter,
                                     double scx, double scy, double scale) {
-        double outerR = inter.radius * scale;
-        double ringW  = LANE_PX * scale * 1.2;
-        double islandR = Math.max(6 * scale, outerR - ringW);
+        double outerR  = inter.radius * scale;
+        // Lòng đường vòng xuyến = 1.5 làn mỗi phía
+        double ringW   = LANE_PX * scale * 2.0;
+        double islandR = Math.max(outerR * 0.52, outerR - ringW);
 
         gc.save();
+
+        // 1. Vùng lòng đường tròn (màu đường)
         gc.setFill(COLOR_ISLAND_RING);
         gc.fillOval(scx - outerR, scy - outerR, outerR * 2, outerR * 2);
 
-        gc.setFill(COLOR_ISLAND);
-        gc.fillOval(scx - islandR, scy - islandR, islandR * 2, islandR * 2);
-
-        gc.setStroke(Color.web("#4a6040", 0.7));
-        gc.setLineWidth(Math.max(0.8, 1.2 * scale));
-        gc.strokeOval(scx - islandR, scy - islandR, islandR * 2, islandR * 2);
-
-        gc.setFill(COLOR_ISLAND_RING);
+        // 2. Nhánh nối từ ngoài vào (không vẽ viền — chỉ fill)
         for (IntersectionRenderData.ArmData arm : inter.arms) {
-            double hw = arm.totalWidth * scale * 0.5;
+            double hw  = arm.totalWidth * scale * 0.5;
             double ang = Math.toRadians(arm.approachAngleDeg);
             double dirX = Math.cos(ang), dirY = Math.sin(ang);
             double perpX = -dirY, perpY = dirX;
             double[] px = {
                     scx + perpX * hw,  scx - perpX * hw,
-                    scx + dirX * outerR * 1.3 - perpX * hw,
-                    scx + dirX * outerR * 1.3 + perpX * hw
+                    scx + dirX * outerR * 1.35 - perpX * hw,
+                    scx + dirX * outerR * 1.35 + perpX * hw
             };
             double[] py = {
                     scy + perpY * hw,  scy - perpY * hw,
-                    scy + dirY * outerR * 1.3 - perpY * hw,
-                    scy + dirY * outerR * 1.3 + perpY * hw
+                    scy + dirY * outerR * 1.35 - perpY * hw,
+                    scy + dirY * outerR * 1.35 + perpY * hw
             };
             gc.fillPolygon(px, py, 4);
         }
+
+        // 3. Đảo trung tâm (màu tối hơn, không có stroke viền)
         gc.setFill(COLOR_ISLAND);
         gc.fillOval(scx - islandR, scy - islandR, islandR * 2, islandR * 2);
 
-        // --- SỬA: THÊM ĐOẠN NÀY ĐỂ VẼ VẠCH CHẠY VÒNG QUANH ĐẢO ---
-        if (scale > 0.2) {
-            double markR = (outerR + islandR) / 2.0; // Bán kính vạch ở giữa lòng đường
+        // 4. Vạch nét đứt chạy giữa lòng đường vòng xuyến
+        if (scale > 0.15) {
+            double markR = (outerR + islandR) / 2.0;
             gc.setStroke(COLOR_MARK_WHITE);
-            gc.setLineWidth(Math.max(1.0, 1.5 * scale));
+            gc.setLineWidth(Math.max(0.8, 1.4 * scale));
             gc.setLineDashes(12 * scale, 10 * scale);
             gc.strokeOval(scx - markR, scy - markR, markR * 2, markR * 2);
             gc.setLineDashes(null);
         }
-        // ---------------------------------------------------------
 
         gc.restore();
     }
@@ -310,9 +300,9 @@ public class InfrastructureRenderer {
             double ex = view.toScreenX(seg.getEndX()),   ey = view.toScreenY(seg.getEndY());
             double ang = Math.atan2(ey - sy, ex - sx);
 
-            // SỬA: Cắt bỏ vạch kẻ vừa đúng bằng bán kính Intersection + 2 pixel padding
-            double offS = (rStartWorld > 0) ? (rStartWorld * scale + 2 * scale) : 8 * scale;
-            double offE = (rEndWorld > 0)   ? (rEndWorld * scale + 2 * scale)   : 8 * scale;
+            // Cắt vạch kẻ sát đúng bán kính nút giao — không padding thừa
+            double offS = (rStartWorld > 0) ? (rStartWorld * scale) : 0;
+            double offE = (rEndWorld   > 0) ? (rEndWorld   * scale) : 0;
 
             double startOffsetX = sx + Math.cos(ang) * offS;
             double startOffsetY = sy + Math.sin(ang) * offS;
@@ -418,23 +408,11 @@ public class InfrastructureRenderer {
     }
 
     private void drawEdgeLines(GraphicsContext gc, RoadSegment seg, double sx, double sy, double ex, double ey, double ang, double offS, double offE, double scale) {
-        if (scale < 0.3) return;
-        double hw = roadWidth(seg, scale) / 2.0 - scale * 0.5;
-        double perpX = Math.cos(ang + Math.PI/2), perpY = Math.sin(ang + Math.PI/2);
-        gc.setStroke(Color.web("#b0bec8", 0.6));
-        gc.setLineWidth(Math.max(0.5, scale * 0.8));
-        gc.strokeLine(sx + Math.cos(ang)*offS - perpX*hw, sy + Math.sin(ang)*offS - perpY*hw, ex - Math.cos(ang)*offE - perpX*hw, ey - Math.sin(ang)*offE - perpY*hw);
-        gc.strokeLine(sx + Math.cos(ang)*offS + perpX*hw, sy + Math.sin(ang)*offS + perpY*hw, ex - Math.cos(ang)*offE + perpX*hw, ey - Math.sin(ang)*offE + perpY*hw);
+        // Không vẽ viền mép đường — vùng nút giao tròn đã bo góc sạch
     }
 
     private void drawStopLine(GraphicsContext gc, double px, double py, double roadAngle, RoadSegment seg, double scale) {
-        if (scale < 0.4) return;
-        double hw = roadWidth(seg, scale) / 2.0;
-        double perpX = Math.cos(roadAngle + Math.PI/2), perpY = Math.sin(roadAngle + Math.PI/2);
-        double ox = px - Math.cos(roadAngle) * 6 * scale, oy = py - Math.sin(roadAngle) * 6 * scale;
-        gc.setStroke(COLOR_MARK_WHITE);
-        gc.setLineWidth(Math.max(1.0, 2.2 * scale));
-        gc.strokeLine(ox - perpX*hw*0.8, oy - perpY*hw*0.8, ox + perpX*hw*0.8, oy + perpY*hw*0.8);
+        // Không vẽ vạch dừng xe — giao diện tối giản như ảnh tham chiếu
     }
 
     private void drawRampCenterLine(GraphicsContext gc, HighwayRampSegment ramp, double scale) {

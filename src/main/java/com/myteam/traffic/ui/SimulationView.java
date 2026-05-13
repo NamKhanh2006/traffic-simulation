@@ -20,7 +20,13 @@ import java.util.Stack;
 
 public class SimulationView extends Canvas {
 
-    public enum InteractionType { PAN, DRAW_ROAD, EDIT_MARKINGS }
+    public enum InteractionType { PAN, DRAW_ROAD, EDIT_MARKINGS, PLACE_INTERSECTION }
+
+    /**
+     * Loại giao lộ sẽ được đặt khi người dùng click trong mode PLACE_INTERSECTION.
+     * "3T","3Y"=Ngã ba T/Y; "4"=Ngã tư; "5"=Ngã năm; "ROUNDABOUT_S/L"=Vòng xuyến.
+     */
+    private String intersectionTypeToPlace = "4";
 
     private final InfrastructureRenderer renderer;
     private RoadNetwork network;
@@ -99,6 +105,7 @@ public class SimulationView extends Canvas {
     public void setAutoIntersect(boolean auto)        { this.autoIntersect = auto; }
     public void setShowGrid(boolean show)             { this.showGrid = show; redraw(); }
     public void setShowLabels(boolean show)           { this.showLabels = show; redraw(); }
+    public void setIntersectionTypeToPlace(String t)  { this.intersectionTypeToPlace = t; }
     public void setInteractionType(InteractionType m) {
         this.currentMode = m;
         this.isDrawing   = false;
@@ -216,6 +223,22 @@ public class SimulationView extends Canvas {
             gc.setFill(Color.AQUA);
             gc.fillOval(sx-4, sy-4, 8, 8);
             gc.fillOval(ex-4, ey-4, 8, 8);
+        }
+
+        // Ghost preview cho mode PLACE_INTERSECTION
+        if (currentMode == InteractionType.PLACE_INTERSECTION && lastMouseX > 0) {
+            double wx = snap(toWorldX(lastMouseX)), wy = snap(toWorldY(lastMouseY));
+            double sx = toScreenX(wx), sy = toScreenY(wy);
+            double previewR = getPreviewRadius() * scale;
+            gc.setStroke(Color.web("#e8d44d", 0.55));
+            gc.setLineWidth(2.5);
+            gc.setLineDashes(8, 6);
+            gc.strokeOval(sx - previewR, sy - previewR, previewR * 2, previewR * 2);
+            gc.setLineDashes(null);
+            gc.setFill(Color.web("#e8d44d", 0.18));
+            gc.fillOval(sx - previewR, sy - previewR, previewR * 2, previewR * 2);
+            gc.setFill(Color.web("#e8d44d", 0.9));
+            gc.fillOval(sx - 4, sy - 4, 8, 8);
         }
     }
 
@@ -378,11 +401,11 @@ public class SimulationView extends Canvas {
 
         // MOUSE_MOVED — hover highlight (chỉ EDIT mode, không kéo)
         addEventHandler(MouseEvent.MOUSE_MOVED, e -> {
-            if (currentMode != InteractionType.EDIT_MARKINGS) return;
-            HoverResult hit = hitTestBoundary(toWorldX(e.getX()), toWorldY(e.getY()));
-            if (hit != hoveredBoundary) {        // chỉ redraw khi trạng thái hover đổi
-                hoveredBoundary = hit;
-                redraw();
+            if (currentMode == InteractionType.EDIT_MARKINGS) {
+                HoverResult hit = hitTestBoundary(toWorldX(e.getX()), toWorldY(e.getY()));
+                if (hit != hoveredBoundary) { hoveredBoundary = hit; redraw(); }
+            } else if (currentMode == InteractionType.PLACE_INTERSECTION) {
+                lastMouseX = e.getX(); lastMouseY = e.getY(); redraw();
             }
         });
 
@@ -402,6 +425,13 @@ public class SimulationView extends Canvas {
 
             if (currentMode == InteractionType.PAN) {
                 lastMouseX = e.getX(); lastMouseY = e.getY();
+
+            } else if (currentMode == InteractionType.PLACE_INTERSECTION) {
+                double rawX = toWorldX(e.getX()), rawY = toWorldY(e.getY());
+                double wx = snap(rawX), wy = snap(rawY);
+                saveSnapshot();
+                placeIntersectionAt(wx, wy);
+                updateRenderData();
 
             } else if (currentMode == InteractionType.DRAW_ROAD) {
                 saveSnapshot();
@@ -632,19 +662,48 @@ public class SimulationView extends Canvas {
     }
 
     /**
-     * Đặt vòng xuyến: tâm = trung điểm drawStart→drawCurrent, bán kính = nửa khoảng cách.
-     * Dùng khi laneConfig > 8.
-     * Nếu kéo rất ngắn (< 50 world units), đặt vòng xuyến nhỏ cố định bán kính 60.
+     * Đặt vòng xuyến khi dùng DRAW_ROAD với laneConfig > 8.
      */
     private void placeRoundabout(double x1, double y1, double x2, double y2) {
         double cx = (x1 + x2) / 2.0;
         double cy = (y1 + y2) / 2.0;
         double dist = Math.hypot(x2 - x1, y2 - y1);
         double radius = Math.max(60.0, dist / 2.0);
-
-        // Tạo RoundaboutIntersection (6 nhánh mặc định, có thể mở rộng)
         com.myteam.traffic.model.infrastructure.intersection.RoundaboutIntersection roundabout =
                 new com.myteam.traffic.model.infrastructure.intersection.RoundaboutIntersection(cx, cy, 6, radius);
         network.addIntersection(roundabout);
+    }
+
+    /**
+     * Đặt giao lộ tại tọa độ world (wx, wy) theo loại đang được chọn.
+     * Nếu đã có giao lộ gần đó (trong 40 world units) thì không tạo mới.
+     */
+    private void placeIntersectionAt(double wx, double wy) {
+        // Không tạo chồng lên giao lộ có sẵn
+        if (network.findNearestIntersection(wx, wy, 40.0) != null) return;
+
+        com.myteam.traffic.model.infrastructure.intersection.Intersection inter;
+        switch (intersectionTypeToPlace) {
+            case "3T" -> inter = new com.myteam.traffic.model.infrastructure.intersection.ThreeWayIntersection(
+                    wx, wy, com.myteam.traffic.model.infrastructure.intersection.ThreeWayIntersection.SubType.T_SHAPE);
+            case "3Y" -> inter = new com.myteam.traffic.model.infrastructure.intersection.ThreeWayIntersection(
+                    wx, wy, com.myteam.traffic.model.infrastructure.intersection.ThreeWayIntersection.SubType.Y_SHAPE);
+            case "5"  -> inter = new com.myteam.traffic.model.infrastructure.intersection.FiveWayIntersection(wx, wy);
+            case "ROUNDABOUT_S" -> inter = new com.myteam.traffic.model.infrastructure.intersection.RoundaboutIntersection(wx, wy, 4, 60);
+            case "ROUNDABOUT_L" -> inter = new com.myteam.traffic.model.infrastructure.intersection.RoundaboutIntersection(wx, wy, 6, 100);
+            default -> inter = new com.myteam.traffic.model.infrastructure.intersection.FourWayIntersection(wx, wy);
+        }
+        network.addIntersection(inter);
+    }
+
+    /** Bán kính preview (world units) tương ứng loại giao lộ đang chọn. */
+    private double getPreviewRadius() {
+        return switch (intersectionTypeToPlace) {
+            case "3T", "3Y" -> 40;
+            case "5"        -> 55;
+            case "ROUNDABOUT_S" -> 60;
+            case "ROUNDABOUT_L" -> 100;
+            default -> 48; // "4"
+        };
     }
 }

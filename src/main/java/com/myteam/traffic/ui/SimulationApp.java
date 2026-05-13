@@ -71,18 +71,19 @@ public class SimulationApp extends Application {
         view.setNetwork(network);
 
         // ════ TOP BAR ════════════════════════════════════════
-        ToggleButton btnModePan  = modeBtn("🖐", "Di chuyển",  "Kéo và xoay bản đồ");
-        ToggleButton btnModeDraw = modeBtn("🛣", "Vẽ đường",   "Vẽ đoạn đường mới");
-        ToggleButton btnModeEdit = modeBtn("✏️", "Sửa vạch",   "Hover vạch kẻ → menu chọn loại");
-        // [THÊM MODE MỚI: tạo thêm ToggleButton ở đây, thêm vào modeGroup và modeBox]
+        ToggleButton btnModePan   = modeBtn("🖐", "Di chuyển",   "Kéo và xoay bản đồ");
+        ToggleButton btnModeDraw  = modeBtn("🛣", "Vẽ đường",    "Vẽ đoạn đường mới");
+        ToggleButton btnModeEdit  = modeBtn("✏️", "Sửa vạch",    "Hover vạch kẻ → menu chọn loại");
+        ToggleButton btnModeInter = modeBtn("🔀", "Giao lộ",     "Click để đặt nút giao thông");
 
         ToggleGroup modeGroup = new ToggleGroup();
         btnModePan.setToggleGroup(modeGroup);
         btnModeDraw.setToggleGroup(modeGroup);
         btnModeEdit.setToggleGroup(modeGroup);
+        btnModeInter.setToggleGroup(modeGroup);
         btnModePan.setSelected(true);
 
-        HBox modeBox = new HBox(4, btnModePan, btnModeDraw, btnModeEdit);
+        HBox modeBox = new HBox(4, btnModePan, btnModeDraw, btnModeEdit, btnModeInter);
         modeBox.setAlignment(Pos.CENTER_LEFT);
 
         Button btnZoomIn  = actionBtn("🔍+", "Phóng to  (Scroll)");
@@ -111,29 +112,33 @@ public class SimulationApp extends Application {
         topBar.setStyle("-fx-background-color:#141824;");
 
         // ════ CONTEXT BAR ════════════════════════════════════
-        HBox ctxPan  = buildCtxPan();
-        HBox ctxDraw = buildCtxDraw(view);
-        HBox ctxEdit = buildCtxEdit();
-        // [THÊM MODE MỚI: thêm buildCtxXxx() và thêm vào ctxStack]
+        HBox ctxPan   = buildCtxPan();
+        HBox ctxDraw  = buildCtxDraw(view);
+        HBox ctxEdit  = buildCtxEdit();
+        HBox ctxInter = buildCtxIntersection(view);
 
-        StackPane ctxStack = new StackPane(ctxPan, ctxDraw, ctxEdit);
+        StackPane ctxStack = new StackPane(ctxPan, ctxDraw, ctxEdit, ctxInter);
         ctxPan.setVisible(true);
         ctxDraw.setVisible(false);
         ctxEdit.setVisible(false);
-        StackPane.setAlignment(ctxPan,  Pos.CENTER_LEFT);
-        StackPane.setAlignment(ctxDraw, Pos.CENTER_LEFT);
-        StackPane.setAlignment(ctxEdit, Pos.CENTER_LEFT);
+        ctxInter.setVisible(false);
+        StackPane.setAlignment(ctxPan,   Pos.CENTER_LEFT);
+        StackPane.setAlignment(ctxDraw,  Pos.CENTER_LEFT);
+        StackPane.setAlignment(ctxEdit,  Pos.CENTER_LEFT);
+        StackPane.setAlignment(ctxInter, Pos.CENTER_LEFT);
         ctxStack.setPadding(new Insets(5, 14, 5, 14));
         ctxStack.setStyle("-fx-background-color:#1a2030; -fx-border-color:#252f45; -fx-border-width:1 0 0 0;");
         ctxStack.setMinHeight(34);
 
         modeGroup.selectedToggleProperty().addListener((obs, old, nw) -> {
-            ctxPan .setVisible(nw == btnModePan);
-            ctxDraw.setVisible(nw == btnModeDraw);
-            ctxEdit.setVisible(nw == btnModeEdit);
-            if (nw == btnModePan)  view.setInteractionType(SimulationView.InteractionType.PAN);
-            if (nw == btnModeDraw) view.setInteractionType(SimulationView.InteractionType.DRAW_ROAD);
-            if (nw == btnModeEdit) view.setInteractionType(SimulationView.InteractionType.EDIT_MARKINGS);
+            ctxPan  .setVisible(nw == btnModePan);
+            ctxDraw .setVisible(nw == btnModeDraw);
+            ctxEdit .setVisible(nw == btnModeEdit);
+            ctxInter.setVisible(nw == btnModeInter);
+            if (nw == btnModePan)   view.setInteractionType(SimulationView.InteractionType.PAN);
+            if (nw == btnModeDraw)  view.setInteractionType(SimulationView.InteractionType.DRAW_ROAD);
+            if (nw == btnModeEdit)  view.setInteractionType(SimulationView.InteractionType.EDIT_MARKINGS);
+            if (nw == btnModeInter) view.setInteractionType(SimulationView.InteractionType.PLACE_INTERSECTION);
         });
 
         // ════ LAYOUT CHÍNH ═══════════════════════════════════
@@ -238,6 +243,60 @@ public class SimulationApp extends Application {
         );
         tip.setStyle("-fx-text-fill:#c8d0e8; -fx-font-size:11px;");
         return hbox(tip);
+    }
+
+    private HBox buildCtxIntersection(SimulationView view) {
+        Label lblType = new Label("Loại giao lộ:");
+        lblType.setStyle("-fx-text-fill:#c8d0e8; -fx-font-size:12px;");
+
+        ComboBox<String[]> typeBox = new ComboBox<>();
+        // Mỗi item = [displayLabel, typeKey]
+        typeBox.getItems().addAll(
+                new String[]{"🔺 Ngã ba T",          "3T"},
+                new String[]{"🔻 Ngã ba Y",          "3Y"},
+                new String[]{"✚ Ngã tư",             "4"},
+                new String[]{"⭐ Ngã năm",            "5"},
+                new String[]{"🔄 Vòng xuyến nhỏ",    "ROUNDABOUT_S"},
+                new String[]{"🔄 Vòng xuyến lớn",    "ROUNDABOUT_L"}
+        );
+        typeBox.setValue(new String[]{"✚ Ngã tư", "4"});
+        typeBox.setPrefWidth(180);
+        typeBox.setStyle("-fx-background-color:#2a3550;");
+
+        // Custom cell renderer để hiển thị label
+        javafx.util.StringConverter<String[]> conv = new javafx.util.StringConverter<>() {
+            @Override public String toString(String[] o)    { return o == null ? "" : o[0]; }
+            @Override public String[] fromString(String s) { return null; }
+        };
+        typeBox.setConverter(conv);
+        typeBox.setButtonCell(new javafx.scene.control.ListCell<>() {
+            @Override protected void updateItem(String[] item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? "" : item[0]);
+                setStyle("-fx-text-fill:white; -fx-font-weight:bold; -fx-font-size:12px; -fx-background-color:transparent;");
+            }
+        });
+        typeBox.setCellFactory(lv -> new javafx.scene.control.ListCell<>() {
+            @Override protected void updateItem(String[] item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) { setText(""); return; }
+                setText(item[0]);
+                setStyle("-fx-text-fill:#c8d0e8; -fx-font-size:12px; -fx-background-color:transparent;");
+            }
+        });
+
+        view.setIntersectionTypeToPlace("4");
+        typeBox.setOnAction(e -> {
+            String[] sel = typeBox.getValue();
+            if (sel != null) view.setIntersectionTypeToPlace(sel[1]);
+        });
+
+        Label tip = new Label("💡 Click vào vị trí muốn đặt tâm giao lộ  •  Ctrl+Z = undo  •  Đường connect sẽ tự nhập giao lộ");
+        tip.setStyle("-fx-text-fill:#4a6080; -fx-font-size:11px;");
+
+        HBox box = hbox(lblType, typeBox, vsep(), tip);
+        box.setSpacing(10);
+        return box;
     }
 
     // ════════════════════════════════════════════════════════
