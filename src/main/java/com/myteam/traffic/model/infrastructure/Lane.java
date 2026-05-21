@@ -11,7 +11,11 @@ public final class Lane {
     // ── Enums ─────────────────────────────────────────────────
 
     public enum MarkingType {
-        NONE, DASHED, SOLID, DOUBLE_SOLID, YELLOW_SOLID,
+        NONE, // Không có vạch
+        DASHED, // Vạch đứt
+        SOLID, //Vạch liền
+        DOUBLE_SOLID, //
+        YELLOW_SOLID,
         /** Nét đứt bên trái, nét liền bên phải — xe bên trái vạch được sang. */
         LEFT_DASHED_RIGHT_SOLID,
         /** Nét liền bên trái, nét đứt bên phải — xe bên phải vạch được sang. */
@@ -32,6 +36,16 @@ public final class Lane {
     private final MarkingType          leftMarking;
     private final MarkingType          rightMarking;
 
+    /**
+     *
+     * @param index chỉ số làn đường
+     * @param direction hướng đi
+     * @param width  chiều rộng lane
+     * @param vehicles  phương tiện được phép đi trong la đường
+     * @param movements hướng di chuyển cho phép trong làn
+     * @param leftMarking loại vạch kẻ đường ở bên trái làn
+     * @param rightMarking loại vạch kẻ đường ở bên phải
+     */
     // ── Constructor ───────────────────────────────────────────
 
     public Lane(int index, Direction direction, double width,
@@ -52,6 +66,8 @@ public final class Lane {
         this.allowedMovements = (movements == null || movements.isEmpty())
                 ? EnumSet.noneOf(Movement.class) : EnumSet.copyOf(movements);
     }
+
+
 
     // ── Wither Methods ────────────────────────────────────────
 
@@ -157,7 +173,7 @@ public final class Lane {
 
     // ── Getters ───────────────────────────────────────────────
 
-    public int                  getIndex()           { return index;           }
+    public int                  getIndex()           { return index;           } 
     public Direction            getDirection()        { return direction;       }
     public double               getWidth()            { return width;           }
     public MarkingType          getLeftMarking()      { return leftMarking;     }
@@ -167,7 +183,7 @@ public final class Lane {
         return Collections.unmodifiableSet(allowedVehicles);
     }
 
-    /** Getter bị thiếu trong version trước — cần thiết để AI query hướng rẽ. */
+    /** Hướng được phép đi của xe trong làn */
     public Set<Movement>        getAllowedMovements() {
         return Collections.unmodifiableSet(allowedMovements);
     }
