@@ -1,4 +1,4 @@
-package Behavior.common;
+package traffic.behavior.common;
 
 public enum Action {
     MOVE_FORWARD,
