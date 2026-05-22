@@ -168,7 +168,9 @@ public class SimulationView extends Canvas {
         if (network == null) return;
         saveSnapshot();
         network.replaceSegment(oldSeg, newSeg);
+        if (selectedSegment == oldSeg) selectedSegment = newSeg;
         updateRenderData();
+        redraw();
     }
     /** Số nhánh vòng xuyến. */
     public void setRoundaboutBranches(int b)          { this.roundaboutBranches = Math.max(3, Math.min(8, b)); }
@@ -466,7 +468,13 @@ public class SimulationView extends Canvas {
         HoverResult best = null;
         double bestDist = HOVER_THRESHOLD;
 
-        for (RoadSegment seg : network.getSegments()) {
+        // Chỉ kiểm tra ranh giới trên đường đang được chọn (selectedSegment)
+        // Không cho phép sửa vạch của đường khác khi đang ở EDIT_MARKINGS
+        Iterable<RoadSegment> candidates = (selectedSegment != null)
+                ? java.util.Collections.singletonList(selectedSegment)
+                : network.getSegments();
+
+        for (RoadSegment seg : candidates) {
             double sx = seg.getStartX(), sy = seg.getStartY();
             double ex = seg.getEndX(),   ey = seg.getEndY();
             double angle  = Math.atan2(ey - sy, ex - sx);
@@ -688,17 +696,21 @@ public class SimulationView extends Canvas {
         Lane.MarkingType current = currentLane.getRightMarking();
 
         // Xác định màu hiện tại (vàng hay trắng)
-        boolean isYellow = (current == Lane.MarkingType.YELLOW_SOLID);
+        boolean isYellow = (current == Lane.MarkingType.YELLOW_SOLID
+                || current == Lane.MarkingType.YELLOW_DASHED
+                || current == Lane.MarkingType.YELLOW_DOUBLE_SOLID
+                || current == Lane.MarkingType.YELLOW_LEFT_DASHED_RIGHT_SOLID
+                || current == Lane.MarkingType.YELLOW_LEFT_SOLID_RIGHT_DASHED);
 
         // ── Danh sách kiểu vạch (style → white variant, yellow variant) ──
         record MarkEntry(String label, Lane.MarkingType white, Lane.MarkingType yellow) {}
         List<MarkEntry> entries = List.of(
-                new MarkEntry("Nét đứt",         Lane.MarkingType.DASHED,                   Lane.MarkingType.DASHED),
-                new MarkEntry("Nét liền",        Lane.MarkingType.SOLID,                    Lane.MarkingType.YELLOW_SOLID),
-                new MarkEntry("Nét đôi",         Lane.MarkingType.DOUBLE_SOLID,             Lane.MarkingType.DOUBLE_SOLID),
-                new MarkEntry("Trái đứt / Phải liền", Lane.MarkingType.LEFT_DASHED_RIGHT_SOLID, Lane.MarkingType.LEFT_DASHED_RIGHT_SOLID),
-                new MarkEntry("Trái liền / Phải đứt", Lane.MarkingType.LEFT_SOLID_RIGHT_DASHED, Lane.MarkingType.LEFT_SOLID_RIGHT_DASHED),
-                new MarkEntry("Xóa vạch",        Lane.MarkingType.NONE,                     Lane.MarkingType.NONE)
+                new MarkEntry("Nét đứt",               Lane.MarkingType.DASHED,                     Lane.MarkingType.YELLOW_DASHED),
+                new MarkEntry("Nét liền",              Lane.MarkingType.SOLID,                      Lane.MarkingType.YELLOW_SOLID),
+                new MarkEntry("Nét đôi",               Lane.MarkingType.DOUBLE_SOLID,               Lane.MarkingType.YELLOW_DOUBLE_SOLID),
+                new MarkEntry("Trái đứt / Phải liền", Lane.MarkingType.LEFT_DASHED_RIGHT_SOLID,     Lane.MarkingType.YELLOW_LEFT_DASHED_RIGHT_SOLID),
+                new MarkEntry("Trái liền / Phải đứt", Lane.MarkingType.LEFT_SOLID_RIGHT_DASHED,     Lane.MarkingType.YELLOW_LEFT_SOLID_RIGHT_DASHED),
+                new MarkEntry("Xóa vạch",              Lane.MarkingType.NONE,                       Lane.MarkingType.NONE)
         );
 
         // Xác định entry hiện tại đang chọn
@@ -777,16 +789,17 @@ public class SimulationView extends Canvas {
         saveSnapshot();
         List<Lane> lanes    = target.seg.getLanes();
         List<Lane> newLanes = new ArrayList<>(lanes);
-        Lane leftLane   = lanes.get(target.boundaryIndex - 1);
-        Lane rightLane  = lanes.get(target.boundaryIndex);
+        Lane leftLane  = lanes.get(target.boundaryIndex - 1);
+        Lane rightLane = lanes.get(target.boundaryIndex);
         newLanes.set(target.boundaryIndex - 1, leftLane.withRightMarking(type));
         newLanes.set(target.boundaryIndex,     rightLane.withLeftMarking(type));
-        network.replaceSegment(target.seg, target.seg.withNewLanes(newLanes));
-        // Không set null — redraw sẽ trigger MOUSE_MOVED re-detect hover tự động
-        // Nhưng vì segment đã thay thế, cần clear để tránh stale reference
+        RoadSegment newSeg = target.seg.withNewLanes(newLanes);
+        network.replaceSegment(target.seg, newSeg);
+        // Cập nhật selectedSegment sang object mới — tránh stale reference
+        // (Lane là immutable nên replaceSegment tạo object hoàn toàn mới)
+        if (selectedSegment == target.seg) selectedSegment = newSeg;
         hoveredBoundary = null;
         updateRenderData();
-        // Tái tạo hover trên segment mới ngay lập tức (không cần di chuyển chuột)
         hoveredBoundary = hitTestBoundary(
                 toWorldX(target.screenX), toWorldY(target.screenY));
         redraw();
@@ -879,6 +892,7 @@ public class SimulationView extends Canvas {
                     // Chuột phải ra ngoài đường trong EDIT_MARKINGS → thoát, restore mode cũ
                     double wxE = toWorldX(e.getX()), wyE = toWorldY(e.getY());
                     if (hitTestSegmentForPopup(wxE, wyE) == null) {
+                        selectedSegment = null;
                         setInteractionType(previousMode);
                         if (onMarkingModeEntered != null) onMarkingModeEntered.accept(null);
                     }
@@ -976,6 +990,7 @@ public class SimulationView extends Canvas {
                 // Click trái ra ngoài đường → thoát, restore mode cũ
                 double wx1 = toWorldX(e.getX()), wy1 = toWorldY(e.getY());
                 if (hitTestSegmentForPopup(wx1, wy1) == null) {
+                    selectedSegment = null;
                     setInteractionType(previousMode);
                     if (onMarkingModeEntered != null) onMarkingModeEntered.accept(null);
                 }

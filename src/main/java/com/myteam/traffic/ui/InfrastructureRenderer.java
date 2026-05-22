@@ -400,15 +400,17 @@ public class InfrastructureRenderer {
             Lane.MarkingType marking = lane.getRightMarking();
             if (marking == Lane.MarkingType.NONE) continue;
 
-            // SỬA LỖI MÀU SẮC: Trắng hay Vàng phụ thuộc vào Loại vạch bạn chọn
-            Color baseColor = COLOR_MARK_WHITE;
-
-            if (marking == Lane.MarkingType.YELLOW_SOLID || marking == Lane.MarkingType.DOUBLE_SOLID) {
-                baseColor = COLOR_MARK_YELLOW;
-            } else if (marking == Lane.MarkingType.SOLID) {
-                baseColor = COLOR_MARK_WHITE; // Ép buộc Trắng nếu người dùng chọn Trắng
-            } else if (lane.getDirection() != lanes.get(i+1).getDirection()) {
-                baseColor = COLOR_MARK_YELLOW; // Mặc định ở giữa (Nét đứt ngược chiều) là Vàng
+            boolean isOppositeDir = lane.getDirection() != lanes.get(i+1).getDirection();
+            Color baseColor;
+            switch (marking) {
+                case YELLOW_SOLID, YELLOW_DASHED, YELLOW_DOUBLE_SOLID,
+                     YELLOW_LEFT_DASHED_RIGHT_SOLID, YELLOW_LEFT_SOLID_RIGHT_DASHED:
+                    baseColor = COLOR_MARK_YELLOW; break;
+                case DASHED, DOUBLE_SOLID:
+                    // Auto-vàng chỉ khi 2 chiều ngược và user chưa chỉ định màu
+                    baseColor = isOppositeDir ? COLOR_MARK_YELLOW : COLOR_MARK_WHITE; break;
+                default:
+                    baseColor = COLOR_MARK_WHITE; break;
             }
 
             gc.setStroke(baseColor);
@@ -420,6 +422,7 @@ public class InfrastructureRenderer {
 
             switch (marking) {
                 case DASHED:
+                case YELLOW_DASHED:
                     gc.setLineWidth(Math.max(0.6, 1.2 * scale));
                     gc.setLineDashes(10*scale, 12*scale);
                     gc.strokeLine(startX, startY, endX, endY);
@@ -431,6 +434,7 @@ public class InfrastructureRenderer {
                     gc.strokeLine(startX, startY, endX, endY);
                     break;
                 case DOUBLE_SOLID:
+                case YELLOW_DOUBLE_SOLID:
                     gc.setLineWidth(Math.max(0.4, 0.8 * scale));
                     gc.setLineDashes(null);
                     double dOffX = Math.cos(ang + Math.PI/2) * (2 * scale);
@@ -440,21 +444,23 @@ public class InfrastructureRenderer {
                     break;
                 case LEFT_DASHED_RIGHT_SOLID:
                 case LEFT_SOLID_RIGHT_DASHED:
+                case YELLOW_LEFT_DASHED_RIGHT_SOLID:
+                case YELLOW_LEFT_SOLID_RIGHT_DASHED:
                     double offX = Math.cos(ang + Math.PI/2) * (1.5 * scale);
                     double offY = Math.sin(ang + Math.PI/2) * (1.5 * scale);
                     gc.setLineWidth(Math.max(0.4, 0.8 * scale));
-
-                    // Nét liền
+                    boolean isSolidLeft = (marking == Lane.MarkingType.LEFT_SOLID_RIGHT_DASHED
+                            || marking == Lane.MarkingType.YELLOW_LEFT_SOLID_RIGHT_DASHED);
                     gc.setLineDashes(null);
-                    if (marking == Lane.MarkingType.LEFT_SOLID_RIGHT_DASHED)
+                    if (isSolidLeft)
                         gc.strokeLine(startX - offX, startY - offY, endX - offX, endY - offY);
-                    else gc.strokeLine(startX + offX, startY + offY, endX + offX, endY + offY);
-
-                    // Nét đứt
-                    gc.setLineDashes(10*scale, 12*scale);
-                    if (marking == Lane.MarkingType.LEFT_SOLID_RIGHT_DASHED)
+                    else
                         gc.strokeLine(startX + offX, startY + offY, endX + offX, endY + offY);
-                    else gc.strokeLine(startX - offX, startY - offY, endX - offX, endY - offY);
+                    gc.setLineDashes(10*scale, 12*scale);
+                    if (isSolidLeft)
+                        gc.strokeLine(startX + offX, startY + offY, endX + offX, endY + offY);
+                    else
+                        gc.strokeLine(startX - offX, startY - offY, endX - offX, endY - offY);
                     break;
                 default: break;
             }

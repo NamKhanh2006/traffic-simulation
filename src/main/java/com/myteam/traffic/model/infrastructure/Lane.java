@@ -11,15 +11,17 @@ public final class Lane {
     // ── Enums ─────────────────────────────────────────────────
 
     public enum MarkingType {
-        NONE, // Không có vạch
-        DASHED, // Vạch đứt
-        SOLID, //Vạch liền
-        DOUBLE_SOLID, //
+        NONE,
+        DASHED,
+        SOLID,
+        DOUBLE_SOLID,
         YELLOW_SOLID,
-        /** Nét đứt bên trái, nét liền bên phải — xe bên trái vạch được sang. */
+        YELLOW_DASHED,
+        YELLOW_DOUBLE_SOLID,
         LEFT_DASHED_RIGHT_SOLID,
-        /** Nét liền bên trái, nét đứt bên phải — xe bên phải vạch được sang. */
-        LEFT_SOLID_RIGHT_DASHED
+        LEFT_SOLID_RIGHT_DASHED,
+        YELLOW_LEFT_DASHED_RIGHT_SOLID,
+        YELLOW_LEFT_SOLID_RIGHT_DASHED
     }
 
     public enum VehicleCategory { CAR, MOTORBIKE, BUS, BICYCLE, EMERGENCY, TRUCK }
@@ -36,16 +38,6 @@ public final class Lane {
     private final MarkingType          leftMarking;
     private final MarkingType          rightMarking;
 
-    /**
-     *
-     * @param index chỉ số làn đường
-     * @param direction hướng đi
-     * @param width  chiều rộng lane
-     * @param vehicles  phương tiện được phép đi trong la đường
-     * @param movements hướng di chuyển cho phép trong làn
-     * @param leftMarking loại vạch kẻ đường ở bên trái làn
-     * @param rightMarking loại vạch kẻ đường ở bên phải
-     */
     // ── Constructor ───────────────────────────────────────────
 
     public Lane(int index, Direction direction, double width,
@@ -66,8 +58,6 @@ public final class Lane {
         this.allowedMovements = (movements == null || movements.isEmpty())
                 ? EnumSet.noneOf(Movement.class) : EnumSet.copyOf(movements);
     }
-
-
 
     // ── Wither Methods ────────────────────────────────────────
 
@@ -91,7 +81,6 @@ public final class Lane {
                 leftMarking, (m == null) ? MarkingType.NONE : m);
     }
 
-    /** Trả về Lane mới với thêm một loại xe được phép. */
     public Lane withAddedVehicle(VehicleCategory cat) {
         Set<VehicleCategory> updated = EnumSet.copyOf(allowedVehicles);
         updated.add(cat);
@@ -99,7 +88,6 @@ public final class Lane {
                 updated, allowedMovements, leftMarking, rightMarking);
     }
 
-    /** Trả về Lane mới với một loại xe bị xóa khỏi danh sách cho phép. */
     public Lane withRemovedVehicle(VehicleCategory cat) {
         Set<VehicleCategory> updated = allowedVehicles.isEmpty()
                 ? EnumSet.noneOf(VehicleCategory.class) : EnumSet.copyOf(allowedVehicles);
@@ -108,7 +96,6 @@ public final class Lane {
                 updated, allowedMovements, leftMarking, rightMarking);
     }
 
-    /** Trả về Lane mới với thêm một hướng di chuyển được phép. */
     public Lane withAddedMovement(Movement mvt) {
         Set<Movement> updated = EnumSet.copyOf(allowedMovements);
         updated.add(mvt);
@@ -116,7 +103,6 @@ public final class Lane {
                 allowedVehicles, updated, leftMarking, rightMarking);
     }
 
-    /** Trả về Lane mới với một hướng di chuyển bị xóa. */
     public Lane withRemovedMovement(Movement mvt) {
         Set<Movement> updated = allowedMovements.isEmpty()
                 ? EnumSet.noneOf(Movement.class) : EnumSet.copyOf(allowedMovements);
@@ -135,37 +121,33 @@ public final class Lane {
 
     /**
      * Kiểm tra xe có thể đổi sang làn bên TRÁI không.
-     * leftMarking là vạch nằm bên trái của làn này.
-     * LEFT_SOLID_RIGHT_DASHED: nét đứt nằm về phía làn hiện tại → được qua.
+     * YELLOW_LEFT_SOLID_RIGHT_DASHED: nét đứt về phía làn hiện tại → được qua (giống LEFT_SOLID_RIGHT_DASHED).
      */
     public boolean canCrossLeft(VehicleCategory cat, boolean isOnDuty) {
         if (isPriorityPass(cat, isOnDuty)) return true;
         return switch (leftMarking) {
-            case DASHED, LEFT_SOLID_RIGHT_DASHED -> true;
-            default                              -> false;
+            case DASHED, YELLOW_DASHED, LEFT_SOLID_RIGHT_DASHED, YELLOW_LEFT_SOLID_RIGHT_DASHED -> true;
+            default -> false;
         };
     }
 
     /**
      * Kiểm tra xe có thể đổi sang làn bên PHẢI không.
-     * rightMarking là vạch nằm bên phải của làn này.
-     * LEFT_DASHED_RIGHT_SOLID: nét đứt nằm về phía làn hiện tại → được qua.
+     * YELLOW_LEFT_DASHED_RIGHT_SOLID: nét đứt về phía làn hiện tại → được qua (giống LEFT_DASHED_RIGHT_SOLID).
      */
     public boolean canCrossRight(VehicleCategory cat, boolean isOnDuty) {
         if (isPriorityPass(cat, isOnDuty)) return true;
         return switch (rightMarking) {
-            case DASHED, LEFT_DASHED_RIGHT_SOLID -> true;
-            default                              -> false;
+            case DASHED, YELLOW_DASHED, LEFT_DASHED_RIGHT_SOLID, YELLOW_LEFT_DASHED_RIGHT_SOLID -> true;
+            default -> false;
         };
     }
 
-    /** Kiểm tra loại xe có được phép vào làn này không. */
     public boolean allowsVehicle(VehicleCategory cat, boolean isOnDuty) {
         if (isPriorityPass(cat, isOnDuty)) return true;
         return allowedVehicles.contains(cat);
     }
 
-    /** Kiểm tra hướng di chuyển có được phép từ làn này không. */
     public boolean allowsMovement(Movement mvt, VehicleCategory cat, boolean isOnDuty) {
         if (isPriorityPass(cat, isOnDuty)) return true;
         return allowedMovements.contains(mvt);
@@ -173,7 +155,7 @@ public final class Lane {
 
     // ── Getters ───────────────────────────────────────────────
 
-    public int                  getIndex()           { return index;           } 
+    public int                  getIndex()           { return index;           }
     public Direction            getDirection()        { return direction;       }
     public double               getWidth()            { return width;           }
     public MarkingType          getLeftMarking()      { return leftMarking;     }
@@ -183,7 +165,6 @@ public final class Lane {
         return Collections.unmodifiableSet(allowedVehicles);
     }
 
-    /** Hướng được phép đi của xe trong làn */
     public Set<Movement>        getAllowedMovements() {
         return Collections.unmodifiableSet(allowedMovements);
     }
