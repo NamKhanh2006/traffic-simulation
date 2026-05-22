@@ -1,4 +1,4 @@
-package behavior.common;
+package traffic.behavior.common;
 
 import traffic.model.vehicle.Vehicle;
 
