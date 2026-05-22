@@ -406,9 +406,6 @@ public class InfrastructureRenderer {
                 case YELLOW_SOLID, YELLOW_DASHED, YELLOW_DOUBLE_SOLID,
                      YELLOW_LEFT_DASHED_RIGHT_SOLID, YELLOW_LEFT_SOLID_RIGHT_DASHED:
                     baseColor = COLOR_MARK_YELLOW; break;
-                case DASHED, DOUBLE_SOLID:
-                    // Auto-vàng chỉ khi 2 chiều ngược và user chưa chỉ định màu
-                    baseColor = isOppositeDir ? COLOR_MARK_YELLOW : COLOR_MARK_WHITE; break;
                 default:
                     baseColor = COLOR_MARK_WHITE; break;
             }

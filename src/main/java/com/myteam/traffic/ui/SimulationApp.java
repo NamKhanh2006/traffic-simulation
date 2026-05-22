@@ -68,6 +68,11 @@ public class SimulationApp extends Application {
         for (int i = 0; i < bwd; i++) l.add(new Lane(fwd + i, Lane.Direction.BACKWARD, 3.5,
                 EnumSet.of(Lane.VehicleCategory.CAR, Lane.VehicleCategory.BUS),
                 EnumSet.of(Lane.Movement.STRAIGHT), Lane.MarkingType.DASHED, Lane.MarkingType.DASHED));
+        // Vạch tim đường → YELLOW_DASHED
+        if (fwd > 0 && bwd > 0) {
+            l.set(fwd - 1, l.get(fwd - 1).withRightMarking(Lane.MarkingType.YELLOW_DASHED));
+            l.set(fwd,     l.get(fwd)    .withLeftMarking (Lane.MarkingType.YELLOW_DASHED));
+        }
         return l;
     }
 
@@ -85,6 +90,13 @@ public class SimulationApp extends Application {
         int bwd = totalLanes / 2;
         for (int i = 0; i < fwd; i++) lanes.add(fwdLane(i));
         for (int i = 0; i < bwd; i++) lanes.add(bwdLane(fwd + i));
+        // Vạch tim đường (giữa làn FORWARD cuối và BACKWARD đầu) → YELLOW_DASHED
+        if (fwd > 0 && bwd > 0) {
+            Lane last  = lanes.get(fwd - 1);
+            Lane first = lanes.get(fwd);
+            lanes.set(fwd - 1, last .withRightMarking(Lane.MarkingType.YELLOW_DASHED));
+            lanes.set(fwd,     first.withLeftMarking (Lane.MarkingType.YELLOW_DASHED));
+        }
         return lanes;
     }
 
@@ -100,6 +112,7 @@ public class SimulationApp extends Application {
         // ════ TOP BAR ════════════════════════════════════════
         ToggleButton btnModePan    = modeBtn("🖐", "Di chuyển",  "Kéo và xoay bản đồ");
         ToggleButton btnModeDraw   = modeBtn("🛣", "Vẽ đường",   "Vẽ đoạn đường mới");
+        ToggleButton btnModeEdit   = modeBtn("✏️", "Sửa vạch",   "Hover vạch kẻ → menu chọn loại");
         ToggleButton btnModeInter  = modeBtn("🔀", "Giao lộ",    "Click để đặt nút giao thông");
         ToggleButton btnModeDelete = modeBtn("🗑", "Xóa",        "Hover vào đường/nút giao → click để xóa");
 
@@ -113,11 +126,11 @@ public class SimulationApp extends Application {
         });
 
         ToggleGroup modeGroup = new ToggleGroup();
-        for (ToggleButton b : new ToggleButton[]{btnModePan, btnModeDraw, btnModeInter, btnModeDelete})
+        for (ToggleButton b : new ToggleButton[]{btnModePan, btnModeDraw, btnModeEdit, btnModeInter, btnModeDelete})
             b.setToggleGroup(modeGroup);
         btnModePan.setSelected(true);
 
-        HBox modeBox = new HBox(4, btnModePan, btnModeDraw, btnModeInter, btnModeDelete);
+        HBox modeBox = new HBox(4, btnModePan, btnModeDraw, btnModeEdit, btnModeInter, btnModeDelete);
         modeBox.setAlignment(Pos.CENTER_LEFT);
 
         Button btnZoomIn  = actionBtn("🔍+", "Phóng to  (Scroll)");
@@ -148,12 +161,13 @@ public class SimulationApp extends Application {
         // ════ CONTEXT BAR ════════════════════════════════════
         HBox ctxPan    = buildCtxPan();
         HBox ctxDraw   = buildCtxDraw(view);
+        HBox ctxEdit   = buildCtxEdit();
         HBox ctxInter  = buildCtxIntersection(view);
         HBox ctxDelete = buildCtxDelete();
 
-        StackPane ctxStack = new StackPane(ctxPan, ctxDraw, ctxInter, ctxDelete);
+        StackPane ctxStack = new StackPane(ctxPan, ctxDraw, ctxEdit, ctxInter, ctxDelete);
         ctxPan.setVisible(true);
-        for (HBox h : new HBox[]{ctxDraw, ctxInter, ctxDelete}) {
+        for (HBox h : new HBox[]{ctxDraw, ctxEdit, ctxInter, ctxDelete}) {
             h.setVisible(false);
             StackPane.setAlignment(h, Pos.CENTER_LEFT);
         }
@@ -165,31 +179,14 @@ public class SimulationApp extends Application {
         modeGroup.selectedToggleProperty().addListener((obs, old, nw) -> {
             ctxPan   .setVisible(nw == btnModePan);
             ctxDraw  .setVisible(nw == btnModeDraw);
+            ctxEdit  .setVisible(nw == btnModeEdit);
             ctxInter .setVisible(nw == btnModeInter);
             ctxDelete.setVisible(nw == btnModeDelete);
             if (nw == btnModePan)    view.setInteractionType(SimulationView.InteractionType.PAN);
             if (nw == btnModeDraw)   view.setInteractionType(SimulationView.InteractionType.DRAW_ROAD);
+            if (nw == btnModeEdit)   view.setInteractionType(SimulationView.InteractionType.EDIT_MARKINGS);
             if (nw == btnModeInter)  view.setInteractionType(SimulationView.InteractionType.PLACE_INTERSECTION);
             if (nw == btnModeDelete) view.setInteractionType(SimulationView.InteractionType.DELETE);
-        });
-
-        // Khi view thay đổi trạng thái EDIT_MARKINGS:
-        // prevMode != null → vừa vào EDIT_MARKINGS, toolbar về PAN (không có nút EDIT_MARKINGS), runLater restore mode thật
-        // prevMode == null → vừa thoát, toolbar restore về mode trước đó (prevMode đã được set trong view)
-        view.setOnMarkingModeEntered(prevMode -> {
-            if (prevMode != null) {
-                // Đang vào EDIT_MARKINGS: toolbar về PAN tạm, rồi view tự giữ EDIT_MARKINGS
-                modeGroup.selectToggle(btnModePan);
-                javafx.application.Platform.runLater(() ->
-                        view.setInteractionType(SimulationView.InteractionType.EDIT_MARKINGS));
-            } else {
-                // Thoát EDIT_MARKINGS: view đã restore previousMode, sync toolbar
-                SimulationView.InteractionType cur = view.getCurrentMode();
-                if      (cur == SimulationView.InteractionType.DRAW_ROAD)          modeGroup.selectToggle(btnModeDraw);
-                else if (cur == SimulationView.InteractionType.PLACE_INTERSECTION) modeGroup.selectToggle(btnModeInter);
-                else if (cur == SimulationView.InteractionType.DELETE)             modeGroup.selectToggle(btnModeDelete);
-                else                                                               modeGroup.selectToggle(btnModePan);
-            }
         });
 
         // ════ LAYOUT ═════════════════════════════════════════
@@ -304,21 +301,23 @@ public class SimulationApp extends Application {
         tfSpeed.setPrefWidth(44);
         tfSpeed.setStyle("-fx-background-color:#2a3550; -fx-text-fill:#e8d44d; -fx-font-size:12px; -fx-border-color:#3a4560;");
         Label lblSpeedU = ctxLabel("km/h");
-        for (javafx.scene.Node n : new javafx.scene.Node[]{lblSpeed, tfSpeed, lblSpeedU}) n.setVisible(false);
+        CheckBox cbEmerg = new CheckBox("Làn KCấp");
+        cbEmerg.setTextFill(Color.web("#ff9944")); cbEmerg.setStyle("-fx-font-size:11px;");
+        for (javafx.scene.Node n : new javafx.scene.Node[]{lblSpeed, tfSpeed, lblSpeedU, cbEmerg}) n.setVisible(false);
         cbHwy.setOnAction(e -> {
             boolean on = cbHwy.isSelected();
             view.setHighwayMode(on);
-            for (javafx.scene.Node n : new javafx.scene.Node[]{lblSpeed, tfSpeed, lblSpeedU}) n.setVisible(on);
+            for (javafx.scene.Node n : new javafx.scene.Node[]{lblSpeed, tfSpeed, lblSpeedU, cbEmerg}) n.setVisible(on);
         });
         tfSpeed.setOnAction(e -> {
             try { view.setHighwayMinSpeed(Double.parseDouble(tfSpeed.getText().trim())); }
             catch (NumberFormatException ex) {}
-            tfSpeed.getParent().requestFocus();
+            tfSpeed.getParent().requestFocus(); // blur → con trỏ biến mất
         });
         tfSpeed.focusedProperty().addListener((ob, ov, focused) -> {
             if (!focused) { try { view.setHighwayMinSpeed(Double.parseDouble(tfSpeed.getText().trim())); } catch (NumberFormatException ignored) {} }
         });
-        // Làn khẩn cấp được cấu hình bên trong dialog "Sửa đường này"
+        cbEmerg.setOnAction(e -> view.setEmergencyLane(cbEmerg.isSelected()));
 
         // ── Auto-intersect ────────────────────────────────────────
         CheckBox cbAuto = styledCb("Tự tạo nút giao", true,
@@ -328,7 +327,7 @@ public class SimulationApp extends Application {
                 lblLane, spinLane,
                 vsep(), lblW, sliderW, tfW, lblWUnit,
                 vsep(), lblDir, btnTwo, btnOne,
-                vsep(), lblHwy, cbHwy, lblSpeed, tfSpeed, lblSpeedU,
+                vsep(), lblHwy, cbHwy, lblSpeed, tfSpeed, lblSpeedU, cbEmerg,
                 vsep(), cbAuto);
         box.setSpacing(6);
         return box;
@@ -478,32 +477,6 @@ public class SimulationApp extends Application {
         );
         root.getChildren().add(scroll);
 
-        // ── Làn khẩn cấp (chỉ cho HighwaySegment) ──────────────
-        boolean isHighway = targetSeg instanceof HighwaySegment;
-        boolean[] emergencyLaneState = { isHighway && ((HighwaySegment) targetSeg).hasEmergencyLane() };
-        if (isHighway) {
-            javafx.scene.layout.HBox emergRow = new javafx.scene.layout.HBox(10);
-            emergRow.setAlignment(Pos.CENTER_LEFT);
-            emergRow.setStyle("-fx-background-color:#1e2a1e; -fx-border-color:#3a5030;" +
-                    " -fx-border-width:1; -fx-padding:8 12 8 12; -fx-background-radius:4;");
-
-            CheckBox cbEmLane = new CheckBox("🟠  Làn khẩn cấp (ngoài cùng bên phải)");
-            cbEmLane.setSelected(emergencyLaneState[0]);
-            cbEmLane.setTextFill(Color.web("#ff9944"));
-            cbEmLane.setStyle("-fx-font-size:12px; -fx-font-weight:bold;");
-
-            Label emNote = new Label("Chỉ cho phép xe cứu thương/cứu hỏa/cảnh sát đang làm nhiệm vụ" +
-                    " và xe gặp sự cố dừng đỗ khẩn cấp.");
-            emNote.setStyle("-fx-text-fill:#8090b0; -fx-font-size:11px;");
-            emNote.setWrapText(true);
-
-            cbEmLane.setOnAction(ev -> emergencyLaneState[0] = cbEmLane.isSelected());
-
-            VBox emBox = new VBox(4, cbEmLane, emNote);
-            emergRow.getChildren().add(emBox);
-            root.getChildren().add(emergRow);
-        }
-
         // Ghi chú
         Label note = new Label("⚙ Cấu hình này áp dụng cho đường vẽ tiếp theo. Nhấn \"Áp dụng\" để lưu.");
         note.setStyle("-fx-text-fill:#5a7090; -fx-font-size:11px;");
@@ -533,24 +506,7 @@ public class SimulationApp extends Application {
                             old.getLeftMarking(), old.getRightMarking());
                     newLanes.add(updated);
                 }
-                RoadSegment updated;
-                if (targetSeg instanceof HighwaySegment hwy) {
-                    // Rebuild HighwaySegment với trạng thái làn khẩn cấp mới
-                    try {
-                        updated = new HighwaySegment(
-                                targetSeg.getStartX(), targetSeg.getStartY(),
-                                targetSeg.getEndX(),   targetSeg.getEndY(),
-                                newLanes, hwy.getMinSpeedLimit(), emergencyLaneState[0]);
-                    } catch (IllegalArgumentException ex) {
-                        // Không đủ làn cho emergency lane → báo lỗi nhẹ, giữ nguyên
-                        new Alert(Alert.AlertType.WARNING,
-                                "Cần ít nhất 3 làn để bật làn khẩn cấp.", ButtonType.OK).showAndWait();
-                        return;
-                    }
-                    updated.setConnector(targetSeg.isConnector());
-                } else {
-                    updated = targetSeg.withNewLanes(newLanes);
-                }
+                RoadSegment updated = targetSeg.withNewLanes(newLanes);
                 view.replaceSegment(targetSeg, updated);
             }
             dlg.close();
