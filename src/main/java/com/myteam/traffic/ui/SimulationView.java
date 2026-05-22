@@ -5,14 +5,14 @@ import com.myteam.traffic.model.infrastructure.intersection.GeneralIntersection;
 import com.myteam.traffic.model.infrastructure.intersection.Intersection;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
-import javafx.scene.control.ContextMenu;
-import javafx.scene.control.MenuItem;
-import javafx.scene.control.SeparatorMenuItem;
+import javafx.scene.control.*;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.input.ScrollEvent;
+import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.StrokeLineCap;
+import javafx.stage.Popup;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,6 +27,16 @@ public class SimulationView extends Canvas {
      * "3T","3Y"=Ngã ba T/Y; "4"=Ngã tư; "5"=Ngã năm; "ROUNDABOUT_S/L"=Vòng xuyến.
      */
     private String intersectionTypeToPlace = "4";
+    private double roundaboutRadius        = 60.0;
+    private int    roundaboutBranches      = 4;
+    private java.util.function.IntFunction<java.util.List<Lane>> laneFactory = null;
+
+    // ── Cấu hình làn nâng cao ─────────────────────────────────
+    private double  laneWidth       = 3.5;
+    private boolean highwayMode     = false;
+    private double  highwayMinSpeed = 60.0;
+    private boolean emergencyLane   = false;
+    private boolean allowHeavy      = false;
 
     private final InfrastructureRenderer renderer;
     private RoadNetwork network;
@@ -46,6 +56,14 @@ public class SimulationView extends Canvas {
     private double  lastMouseX, lastMouseY;
     private boolean isDrawing = false;
     private double  drawStartX, drawStartY, drawCurrentX, drawCurrentY;
+
+    // ── Redraw throttle: gộp nhiều yêu cầu vẽ lại trong 1 frame ─
+    private boolean redrawPending = false;
+    private final javafx.animation.AnimationTimer redrawTimer = new javafx.animation.AnimationTimer() {
+        @Override public void handle(long now) {
+            if (redrawPending) { redrawPending = false; redrawNow(); }
+        }
+    };
 
     private static final double SNAP_GRID = 100.0;
 
@@ -70,7 +88,21 @@ public class SimulationView extends Canvas {
         }
     }
 
-    // ── Undo stack ────────────────────────────────────────────
+    /**
+     * Callback để App đồng bộ toolbar khi view thay đổi trạng thái EDIT_MARKINGS.
+     * Tham số: InteractionType trước đó nếu vừa vào EDIT_MARKINGS, null nếu vừa thoát.
+     */
+    private java.util.function.Consumer<InteractionType> onMarkingModeEntered = null;
+    public void setOnMarkingModeEntered(java.util.function.Consumer<InteractionType> cb) { this.onMarkingModeEntered = cb; }
+
+    /** Mode trước khi vào EDIT_MARKINGS — để restore khi thoát. */
+    private InteractionType previousMode = InteractionType.PAN;
+
+    /**
+     * Flag bỏ qua 1 MOUSE_PRESSED tiếp theo — dùng khi popup đóng và event
+     * "click để đóng popup" bị forward xuống canvas gây pan/select không mong muốn.
+     */
+    private boolean ignoreNextPress = false;
     private final Stack<NetworkSnapshot> undoStack = new Stack<>();
 
     private static class NetworkSnapshot {
@@ -97,6 +129,16 @@ public class SimulationView extends Canvas {
         this.translateX = width  / 2;
         this.translateY = height / 2;
         setupEvents();
+        // Ẩn popup khi cửa sổ mất focus
+        sceneProperty().addListener((obs, oldScene, newScene) -> {
+            if (newScene != null) {
+                newScene.windowProperty().addListener((obs2, ow, nw) -> {
+                    if (nw != null) nw.focusedProperty().addListener((obs3, was, focused) -> {
+                        if (!focused) hideRoadTip();
+                    });
+                });
+            }
+        });
     }
 
     // ── Setters ───────────────────────────────────────────────
@@ -106,10 +148,48 @@ public class SimulationView extends Canvas {
     public void setShowGrid(boolean show)             { this.showGrid = show; redraw(); }
     public void setShowLabels(boolean show)           { this.showLabels = show; redraw(); }
     public void setIntersectionTypeToPlace(String t)  { this.intersectionTypeToPlace = t; }
+    public void setLaneFactory(java.util.function.IntFunction<java.util.List<Lane>> f) { this.laneFactory = f; }
+
+    // ── Cấu hình làn đường nâng cao ──────────────────────────
+    /** Chiều rộng mỗi làn (mét, mặc định 3.5). Áp dụng cho đường vẽ tiếp theo. */
+    public void setLaneWidth(double w)                { this.laneWidth = Math.max(2.0, Math.min(6.0, w)); }
+    /** Bán kính vòng xuyến (world units). */
+    public void setRoundaboutRadius(double r)         { this.roundaboutRadius = Math.max(40, r); }
+    // ── Selected segment (click trong PAN mode để chọn đường sửa) ──
+    private RoadSegment selectedSegment = null;
+    private java.util.function.Consumer<RoadSegment> onSegmentSelected = null;
+    public void setOnSegmentSelected(java.util.function.Consumer<RoadSegment> cb) { this.onSegmentSelected = cb; }
+
+    public RoadSegment getSelectedSegment()  { return selectedSegment; }
+    public RoadSegment getHoveredSegment()   { return tipSegment; }
+
+    public void clearSelectedSegment() { selectedSegment = null; redraw(); }
+    public void replaceSegment(RoadSegment oldSeg, RoadSegment newSeg) {
+        if (network == null) return;
+        saveSnapshot();
+        network.replaceSegment(oldSeg, newSeg);
+        updateRenderData();
+    }
+    /** Số nhánh vòng xuyến. */
+    public void setRoundaboutBranches(int b)          { this.roundaboutBranches = Math.max(3, Math.min(8, b)); }
+    /** Đường cao tốc: true = dùng HighwaySegment. */
+    public void setHighwayMode(boolean hw)            { this.highwayMode = hw; }
+    /** Tốc độ tối thiểu cao tốc (km/h). */
+    public void setHighwayMinSpeed(double s)          { this.highwayMinSpeed = s; }
+    /** Có làn khẩn cấp không. */
+    public void setEmergencyLane(boolean el)          { this.emergencyLane = el; }
+    /** Cho phép xe buýt/xe tải. */
+    public void setAllowHeavy(boolean allow)          { this.allowHeavy = allow; }
+
     public void setInteractionType(InteractionType m) {
         this.currentMode = m;
         this.isDrawing   = false;
-        this.hoveredBoundary = null; // reset hover khi đổi mode
+        this.hoveredBoundary    = null;
+        this.hoveredSegment     = null;
+        this.hoveredIntersection = null;
+        // Đặt vị trí preview về tâm canvas nếu chuột chưa vào canvas
+        if (lastMouseX <= 0) lastMouseX = getWidth() / 2;
+        if (lastMouseY <= 0) lastMouseY = getHeight() / 2;
         redraw();
     }
 
@@ -117,7 +197,12 @@ public class SimulationView extends Canvas {
     public void resetView()  { scale = 1.0; translateX = getWidth()/2; translateY = getHeight()/2; redraw(); }
     public void zoomIn()     { scale *= 1.2; redraw(); }
     public void zoomOut()    { scale /= 1.2; redraw(); }
+
+    /** Yêu cầu vẽ lại — được gộp lại trong 1 frame, tránh vẽ nhiều lần/frame khi zoom/pan nhanh. */
+    public void redraw() { redrawPending = true; redrawTimer.start(); }
+
     public double getViewScale() { return scale; }
+    public InteractionType getCurrentMode() { return currentMode; }
     public double getViewX()     { return translateX; }
     public double getViewY()     { return translateY; }
 
@@ -158,11 +243,40 @@ public class SimulationView extends Canvas {
             double dx = ex - sx, dy = ey - sy;
             double len2 = dx*dx + dy*dy;
             if (len2 < 1e-6) continue;
-            double t = Math.max(0, Math.min(1, ((worldX-sx)*dx + (worldY-sy)*dy) / len2));
+            double t = ((worldX-sx)*dx + (worldY-sy)*dy) / len2;
+            // Lùi vào trong 8% ở 2 đầu để tránh đè vùng giao lộ
+            t = Math.max(0.08, Math.min(0.92, t));
             double projX = sx + t*dx, projY = sy + t*dy;
             double d = Math.hypot(worldX - projX, worldY - projY);
-            // Ngưỡng = nửa chiều rộng thực của đoạn đường (world units: số làn × 20 / 2)
-            double halfWidth = seg.getLaneCount() * 20.0 / 2.0;
+            // Vùng nhận diện = 60% chiều rộng thực (rộng hơn cũ ×1.4 nhưng không quá toàn bộ)
+            double halfWidth = seg.getLaneCount() * 20.0 / 2.0 * 1.4;
+            if (d <= halfWidth && d < bestDist) { bestDist = d; result = seg; }
+        }
+        return result;
+    }
+
+    /**
+     * Phiên bản hit-test rộng hơn dùng cho hover + chuột phải pin popup.
+     * Vùng nhận diện = toàn bộ chiều rộng đường + padding 12 world units mỗi bên,
+     * và không bị giới hạn 8% ở 2 đầu (để hover đầu đường vẫn hiện popup).
+     */
+    private RoadSegment hitTestSegmentForPopup(double worldX, double worldY) {
+        if (network == null) return null;
+        RoadSegment result = null;
+        double bestDist = Double.MAX_VALUE;
+        for (RoadSegment seg : network.getSegments()) {
+            if (seg.isConnector()) continue;
+            double sx = seg.getStartX(), sy = seg.getStartY();
+            double ex = seg.getEndX(),   ey = seg.getEndY();
+            double dx = ex - sx, dy = ey - sy;
+            double len2 = dx*dx + dy*dy;
+            if (len2 < 1e-6) continue;
+            double t = ((worldX-sx)*dx + (worldY-sy)*dy) / len2;
+            t = Math.max(0.0, Math.min(1.0, t)); // toàn bộ chiều dài đường
+            double projX = sx + t*dx, projY = sy + t*dy;
+            double d = Math.hypot(worldX - projX, worldY - projY);
+            // Toàn bộ nửa chiều rộng thực + 12 world units padding
+            double halfWidth = seg.getLaneCount() * laneWidth / 2.0 + 12.0;
             if (d <= halfWidth && d < bestDist) { bestDist = d; result = seg; }
         }
         return result;
@@ -235,7 +349,8 @@ public class SimulationView extends Canvas {
     // ════════════════════════════════════════════════════════════
     // REDRAW
     // ════════════════════════════════════════════════════════════
-    public void redraw() {
+    /** Thực sự vẽ lại ngay lập tức (gọi nội bộ từ AnimationTimer). */
+    private void redrawNow() {
         GraphicsContext gc = getGraphicsContext2D();
         gc.setFill(Color.web("#1a1f2e"));
         gc.fillRect(0, 0, getWidth(), getHeight());
@@ -262,6 +377,8 @@ public class SimulationView extends Canvas {
             if (currentMode == InteractionType.EDIT_MARKINGS && hoveredBoundary != null) {
                 renderer.drawBoundaryHighlight(gc, hoveredBoundary.seg, hoveredBoundary.boundaryIndex);
             }
+            // Highlight đường đã được chọn (click trong PAN mode)
+            if (selectedSegment != null) renderer.drawSelectedHighlight(gc, selectedSegment);
 
             // DELETE mode: highlight đỏ đoạn đường / nút giao đang hover
             if (currentMode == InteractionType.DELETE) {
@@ -389,51 +506,271 @@ public class SimulationView extends Canvas {
     // POPUP MENU (EDIT_MARKINGS mode)
     // ════════════════════════════════════════════════════════════
 
-    // ── Active context menu (để đóng khi cần) ─────────────────
+    // ── Road info popup ───────────────────────────────────────
+    // Hover  → info text đi theo chuột, không có nút Sửa
+    // Click trái → popup đứng yên, hiện nút ✏ Sửa
+    // Mất focus window → tự ẩn
+    private final Popup  roadInfoPopup         = new Popup();
+    private final Label  roadInfoLabel         = new Label();
+    private final Button roadInfoEditBtn       = new Button("✏  Sửa đường này");
+    private final Button roadInfoEditMarkBtn   = new Button("🎨  Sửa vạch kẻ");
+    private RoadSegment  tipSegment  = null;
+    private boolean      tipPinned   = false;   // true = chuột phải đã pin
+
+    {
+        roadInfoLabel.setStyle(
+                "-fx-font-size:11.5px; -fx-font-family:'Monospaced';" +
+                        "-fx-text-fill:#c8d0e8; -fx-padding:0;");
+        roadInfoLabel.setWrapText(false);
+
+        // Dòng hướng dẫn — hiện khi hover, ẩn khi pin
+        Label hintLabel = new Label("🖱  Chuột phải để ghim  •  Click ngoài để đóng");
+        hintLabel.setStyle(
+                "-fx-font-size:10px; -fx-text-fill:#4a6080; -fx-padding:2 0 0 0;");
+
+        // Nút Sửa đường này
+        roadInfoEditBtn.setStyle(
+                "-fx-background-color:#2a5040; -fx-text-fill:#80e8a0;" +
+                        "-fx-font-size:11px; -fx-cursor:hand; -fx-padding:5 16 5 16;" +
+                        "-fx-background-radius:4; -fx-border-color:#3a8060; -fx-border-radius:4;");
+        roadInfoEditBtn.setVisible(false);
+        roadInfoEditBtn.setManaged(false);
+        roadInfoEditBtn.setOnAction(e -> {
+            RoadSegment seg = tipSegment;
+            ignoreNextPress = true;
+            hideRoadTip();
+            if (seg != null && onSegmentSelected != null) {
+                selectedSegment = seg;
+                onSegmentSelected.accept(seg);
+            }
+        });
+
+        // Nút Sửa vạch kẻ
+        roadInfoEditMarkBtn.setStyle(
+                "-fx-background-color:#2a3a60; -fx-text-fill:#80b8ff;" +
+                        "-fx-font-size:11px; -fx-cursor:hand; -fx-padding:5 16 5 16;" +
+                        "-fx-background-radius:4; -fx-border-color:#3a5898; -fx-border-radius:4;");
+        roadInfoEditMarkBtn.setVisible(false);
+        roadInfoEditMarkBtn.setManaged(false);
+        roadInfoEditMarkBtn.setOnAction(e -> {
+            RoadSegment seg = tipSegment;
+            ignoreNextPress = true;
+            hideRoadTip();
+            if (seg != null) {
+                selectedSegment = seg;
+                previousMode = currentMode; // nhớ mode để restore khi thoát
+                setInteractionType(InteractionType.EDIT_MARKINGS);
+                if (onMarkingModeEntered != null) onMarkingModeEntered.accept(previousMode);
+            }
+        });
+
+        // HBox chứa 2 nút cạnh nhau
+        javafx.scene.layout.HBox btnRow = new javafx.scene.layout.HBox(8,
+                roadInfoEditBtn, roadInfoEditMarkBtn);
+
+        // hintLabel là index 1, btnRow là index 2
+        VBox box = new VBox(6, roadInfoLabel, hintLabel, btnRow);
+        box.setStyle(
+                "-fx-background-color:#0d1420e8; -fx-border-color:#3a4a6a;" +
+                        "-fx-border-width:1; -fx-padding:8 12 8 12;" +
+                        "-fx-background-radius:6; -fx-border-radius:6;");
+
+        roadInfoPopup.getContent().add(box);
+        roadInfoPopup.setAutoHide(false);
+        roadInfoPopup.setConsumeAutoHidingEvents(false);
+    }
+
+    /** Dựng lại nội dung label từ segment. */
+    private String buildRoadTipText(RoadSegment seg) {
+        StringBuilder sb = new StringBuilder();
+        if (seg instanceof HighwaySegment hwy) {
+            sb.append("🛣  CAO TỐC | ").append(seg.getLaneCount()).append(" làn");
+            sb.append("  ≥").append((int)hwy.getMinSpeedLimit()).append(" km/h");
+            if (hwy.hasEmergencyLane()) sb.append("  🟠Làn KC");
+        } else if (seg instanceof HighwayRampSegment ramp) {
+            sb.append(ramp.getRampType() == HighwayRampSegment.RampType.ONRAMP
+                    ? "⤵  VÀO CAO TỐC" : "⤴  RA CAO TỐC");
+            sb.append(" | ").append(seg.getLaneCount()).append(" làn");
+        } else {
+            sb.append("🛣  Đường thường | ").append(seg.getLaneCount()).append(" làn");
+        }
+        sb.append(String.format("  |  %.0f m\n", seg.getLength() / 20.0 * 3.5));
+        for (Lane l : seg.getLanes()) {
+            sb.append(l.getDirection() == Lane.Direction.FORWARD ? "  →" : "  ←");
+            sb.append(String.format(" %.1fm", l.getWidth()));
+            if (l.getAllowedVehicles().contains(Lane.VehicleCategory.CAR))       sb.append(" 🚗");
+            if (l.getAllowedVehicles().contains(Lane.VehicleCategory.MOTORBIKE)) sb.append("🛵");
+            if (l.getAllowedVehicles().contains(Lane.VehicleCategory.BUS))       sb.append("🚌");
+            if (l.getAllowedVehicles().contains(Lane.VehicleCategory.TRUCK))     sb.append("🚛");
+            if (l.getAllowedVehicles().contains(Lane.VehicleCategory.BICYCLE))   sb.append("🚲");
+            if (l.getAllowedVehicles().contains(Lane.VehicleCategory.EMERGENCY)) sb.append("🚨");
+            sb.append("  [");
+            if (l.getAllowedMovements().contains(Lane.Movement.STRAIGHT)) sb.append("↑");
+            if (l.getAllowedMovements().contains(Lane.Movement.LEFT))     sb.append("↰");
+            if (l.getAllowedMovements().contains(Lane.Movement.RIGHT))    sb.append("↱");
+            if (l.getAllowedMovements().contains(Lane.Movement.U_TURN))  sb.append("↩");
+            sb.append("]\n");
+        }
+        return sb.toString().trim();
+    }
+
+    private void showRoadTip(RoadSegment seg, double screenX, double screenY) {
+        if (tipPinned) return;
+        if (seg != tipSegment) {
+            tipSegment = seg;
+            roadInfoLabel.setText(buildRoadTipText(seg));
+        }
+        // Hover: hint visible, hàng nút ẩn
+        VBox box = (VBox) roadInfoPopup.getContent().get(0);
+        box.getChildren().get(1).setVisible(true);   // hintLabel
+        box.getChildren().get(1).setManaged(true);
+        box.getChildren().get(2).setVisible(false);  // btnRow
+        box.getChildren().get(2).setManaged(false);
+        roadInfoEditBtn.setVisible(false);
+        roadInfoEditBtn.setManaged(false);
+        roadInfoEditMarkBtn.setVisible(false);
+        roadInfoEditMarkBtn.setManaged(false);
+        if (!roadInfoPopup.isShowing())
+            roadInfoPopup.show(this, screenX + 18, screenY + 14);
+        else {
+            roadInfoPopup.setAnchorX(screenX + 18);
+            roadInfoPopup.setAnchorY(screenY + 14);
+        }
+    }
+
+    private void pinRoadTip(RoadSegment seg, double screenX, double screenY) {
+        tipPinned = true;
+        tipSegment = seg;
+        roadInfoLabel.setText(buildRoadTipText(seg));
+        // Pin: ẩn hint, hiện hàng nút (cả 2 nút Sửa)
+        VBox box = (VBox) roadInfoPopup.getContent().get(0);
+        box.getChildren().get(1).setVisible(false);  // hintLabel
+        box.getChildren().get(1).setManaged(false);
+        box.getChildren().get(2).setVisible(true);   // btnRow
+        box.getChildren().get(2).setManaged(true);
+        roadInfoEditBtn.setVisible(true);
+        roadInfoEditBtn.setManaged(true);
+        roadInfoEditMarkBtn.setVisible(true);
+        roadInfoEditMarkBtn.setManaged(true);
+        // Luôn show tại vị trí mới — kể cả đang hiện từ hover trước đó
+        roadInfoPopup.hide();
+        roadInfoPopup.show(this, screenX + 18, screenY + 14);
+    }
+
+    private void hideRoadTip() {
+        tipSegment = null;
+        tipPinned  = false;
+        roadInfoEditBtn.setVisible(false);
+        roadInfoEditBtn.setManaged(false);
+        roadInfoEditMarkBtn.setVisible(false);
+        roadInfoEditMarkBtn.setManaged(false);
+        // Ẩn btnRow
+        VBox box = (VBox) roadInfoPopup.getContent().get(0);
+        if (box.getChildren().size() > 2) {
+            box.getChildren().get(2).setVisible(false);
+            box.getChildren().get(2).setManaged(false);
+        }
+        roadInfoPopup.hide();
+    }
+    // ── Marking picker popup ──────────────────────────────────
+    private Popup activeMarkingPopup = null;
     private ContextMenu activeMenu = null;
 
     private void hideActiveMenu() {
-        if (activeMenu != null && activeMenu.isShowing()) {
-            activeMenu.hide();
-        }
-        activeMenu = null;
+        if (activeMenu != null) { activeMenu.hide(); activeMenu = null; }
+        if (activeMarkingPopup != null) { activeMarkingPopup.hide(); activeMarkingPopup = null; }
     }
 
-    /**
-     * Hiển thị context menu để chọn loại vạch kẻ cho ranh giới đang hover.
-     * Gọi khi chuột PHẢI click (hoặc chuột TRÁI nếu muốn).
-     */
     private void showMarkingMenu(HoverResult target, double screenX, double screenY) {
-        hideActiveMenu(); // Đóng menu cũ trước khi mở menu mới
-        ContextMenu menu = new ContextMenu();
-        menu.setStyle("-fx-background-color:#1e2838; -fx-border-color:#3a4a6a; -fx-border-width:1;");
+        hideActiveMenu();
 
-        Lane currentMarking = target.seg.getLanes().get(target.boundaryIndex - 1);
-        Lane.MarkingType current = currentMarking.getRightMarking();
+        Lane currentLane = target.seg.getLanes().get(target.boundaryIndex - 1);
+        Lane.MarkingType current = currentLane.getRightMarking();
 
-        // Bổ sung toàn bộ các loại vạch từ model Lane.java
-        addMarkingItem(menu, "  ╌╌╌  Nét đứt (Trắng)",         Lane.MarkingType.DASHED,       current, target);
-        addMarkingItem(menu, "  ───  Nét liền (Trắng)",         Lane.MarkingType.SOLID,        current, target);
-        addMarkingItem(menu, "  ═══  Nét đôi (Trắng)",          Lane.MarkingType.DOUBLE_SOLID, current, target);
-        addMarkingItem(menu, "  ───  Nét liền (Vàng)",          Lane.MarkingType.YELLOW_SOLID, current, target);
-        addMarkingItem(menu, "  ╌│─  Trái đứt / Phải liền",     Lane.MarkingType.LEFT_DASHED_RIGHT_SOLID, current, target);
-        addMarkingItem(menu, "  ─│╌  Trái liền / Phải đứt",     Lane.MarkingType.LEFT_SOLID_RIGHT_DASHED, current, target);
+        // Xác định màu hiện tại (vàng hay trắng)
+        boolean isYellow = (current == Lane.MarkingType.YELLOW_SOLID);
 
-        menu.getItems().add(new SeparatorMenuItem());
-        addMarkingItem(menu, "  (trống) Xóa vạch", Lane.MarkingType.NONE, current, target);
+        // ── Danh sách kiểu vạch (style → white variant, yellow variant) ──
+        record MarkEntry(String label, Lane.MarkingType white, Lane.MarkingType yellow) {}
+        List<MarkEntry> entries = List.of(
+                new MarkEntry("Nét đứt",         Lane.MarkingType.DASHED,                   Lane.MarkingType.DASHED),
+                new MarkEntry("Nét liền",        Lane.MarkingType.SOLID,                    Lane.MarkingType.YELLOW_SOLID),
+                new MarkEntry("Nét đôi",         Lane.MarkingType.DOUBLE_SOLID,             Lane.MarkingType.DOUBLE_SOLID),
+                new MarkEntry("Trái đứt / Phải liền", Lane.MarkingType.LEFT_DASHED_RIGHT_SOLID, Lane.MarkingType.LEFT_DASHED_RIGHT_SOLID),
+                new MarkEntry("Trái liền / Phải đứt", Lane.MarkingType.LEFT_SOLID_RIGHT_DASHED, Lane.MarkingType.LEFT_SOLID_RIGHT_DASHED),
+                new MarkEntry("Xóa vạch",        Lane.MarkingType.NONE,                     Lane.MarkingType.NONE)
+        );
 
-        activeMenu = menu;
-        menu.setOnHidden(ev -> { if (activeMenu == menu) activeMenu = null; });
-        menu.show(this, screenX, screenY);
-    }
+        // Xác định entry hiện tại đang chọn
+        MarkEntry currentEntry = entries.stream()
+                .filter(en -> en.white() == current || en.yellow() == current)
+                .findFirst().orElse(entries.get(0));
 
-    private void addMarkingItem(ContextMenu menu, String label,
-                                Lane.MarkingType type, Lane.MarkingType current,
-                                HoverResult target) {
-        MenuItem item = new MenuItem((type == current ? "✔ " : "    ") + label);
-        item.setStyle("-fx-text-fill:#c8d0e8; -fx-font-size:13px; -fx-background-color:transparent;");
-        item.setOnAction(e -> applyMarking(target, type));
-        menu.getItems().add(item);
+        // ── Toggle màu ────────────────────────────────────────
+        javafx.beans.property.BooleanProperty yellowMode =
+                new javafx.beans.property.SimpleBooleanProperty(isYellow);
+
+        // ── Build popup content ───────────────────────────────
+        javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(0);
+        root.setStyle(
+                "-fx-background-color:#16202e; -fx-border-color:#3a4a6a;" +
+                        "-fx-border-width:1; -fx-background-radius:6; -fx-border-radius:6;");
+
+        // Header: chọn màu trắng / vàng
+        javafx.scene.layout.HBox colorRow = new javafx.scene.layout.HBox(0);
+        colorRow.setStyle("-fx-padding:6 8 6 8; -fx-border-color:transparent transparent #2a3a55 transparent; -fx-border-width:0 0 1 0;");
+        Button btnWhite  = new Button("⬜ Trắng");
+        Button btnYellow = new Button("🟡 Vàng");
+        String baseBtn   = "-fx-font-size:11px; -fx-cursor:hand; -fx-padding:3 12 3 12;" +
+                "-fx-background-radius:3; -fx-border-radius:3; -fx-border-width:1;";
+        Runnable refreshColors = () -> {
+            boolean y = yellowMode.get();
+            btnWhite .setStyle(baseBtn + (!y
+                    ? "-fx-background-color:#2a4060; -fx-text-fill:#e8f0ff; -fx-border-color:#5080c0;"
+                    : "-fx-background-color:#1a2535; -fx-text-fill:#6a80a0; -fx-border-color:#2a3a55;"));
+            btnYellow.setStyle(baseBtn + ( y
+                    ? "-fx-background-color:#4a3800; -fx-text-fill:#ffe060; -fx-border-color:#c0a020;"
+                    : "-fx-background-color:#1a2535; -fx-text-fill:#6a80a0; -fx-border-color:#2a3a55;"));
+        };
+        refreshColors.run();
+        btnWhite .setOnAction(ev -> { yellowMode.set(false); refreshColors.run(); });
+        btnYellow.setOnAction(ev -> { yellowMode.set(true);  refreshColors.run(); });
+        colorRow.getChildren().addAll(btnWhite, new javafx.scene.layout.Region() {{
+            javafx.scene.layout.HBox.setHgrow(this, javafx.scene.layout.Priority.ALWAYS);
+        }}, btnYellow);
+
+        root.getChildren().add(colorRow);
+
+        // Danh sách vạch
+        for (MarkEntry entry : entries) {
+            boolean isCurrent = (entry == currentEntry);
+            Button btn = new Button((isCurrent ? "✔  " : "     ") + entry.label());
+            btn.setMaxWidth(Double.MAX_VALUE);
+            btn.setStyle(
+                    "-fx-background-color:" + (isCurrent ? "#1e3a5a" : "transparent") + ";" +
+                            "-fx-text-fill:" + (isCurrent ? "#90c8ff" : "#c8d0e8") + ";" +
+                            "-fx-font-size:12.5px; -fx-cursor:hand; -fx-padding:7 14 7 14;" +
+                            "-fx-alignment:CENTER_LEFT; -fx-border-width:0; -fx-background-radius:0;");
+            btn.setOnMouseEntered(ev -> {
+                if (!isCurrent) btn.setStyle(btn.getStyle().replace("transparent", "#1a2a3e"));
+            });
+            btn.setOnMouseExited(ev -> {
+                if (!isCurrent) btn.setStyle(btn.getStyle().replace("#1a2a3e", "transparent"));
+            });
+            btn.setOnAction(ev -> {
+                Lane.MarkingType chosen = yellowMode.get() ? entry.yellow() : entry.white();
+                applyMarking(target, chosen);
+                hideActiveMenu();
+            });
+            root.getChildren().add(btn);
+        }
+
+        Popup popup = new Popup();
+        popup.setAutoHide(true);
+        popup.getContent().add(root);
+        popup.show(this, screenX, screenY);
+        activeMarkingPopup = popup;
+        popup.setOnHidden(ev -> { if (activeMarkingPopup == popup) activeMarkingPopup = null; });
     }
 
     private void applyMarking(HoverResult target, Lane.MarkingType type) {
@@ -505,8 +842,10 @@ public class SimulationView extends Canvas {
             if (currentMode == InteractionType.EDIT_MARKINGS) {
                 HoverResult hit = hitTestBoundary(wx, wy);
                 if (hit != hoveredBoundary) { hoveredBoundary = hit; redraw(); }
+                if (!tipPinned) hideRoadTip();
             } else if (currentMode == InteractionType.PLACE_INTERSECTION) {
                 lastMouseX = e.getX(); lastMouseY = e.getY(); redraw();
+                if (!tipPinned) hideRoadTip();
             } else if (currentMode == InteractionType.DELETE) {
                 if (network == null) return;
                 RoadSegment  newSeg   = hitTestSegment(wx, wy);
@@ -515,25 +854,83 @@ public class SimulationView extends Canvas {
                 if (newSeg != hoveredSegment || newInter != hoveredIntersection) {
                     hoveredSegment = newSeg; hoveredIntersection = newInter; redraw();
                 }
+                // Popup dùng vùng rộng hơn
+                RoadSegment popupSeg = hitTestSegmentForPopup(wx, wy);
+                if (popupSeg != null) showRoadTip(popupSeg, e.getScreenX(), e.getScreenY());
+                else if (!tipPinned) hideRoadTip();
+            } else {
+                // PAN / DRAW mode: popup đi theo chuột khi hover trên đường
+                RoadSegment hovered = hitTestSegmentForPopup(wx, wy);
+                if (hovered != null)
+                    showRoadTip(hovered, e.getScreenX(), e.getScreenY());
+                else if (!tipPinned)
+                    hideRoadTip();
             }
         });
 
         // MOUSE_PRESSED
         addEventHandler(MouseEvent.MOUSE_PRESSED, e -> {
+            // Bỏ qua press đầu tiên sau khi popup đóng (tránh pan/select không mong muốn)
+            if (ignoreNextPress) { ignoreNextPress = false; e.consume(); return; }
             if (e.getButton() == MouseButton.SECONDARY) {
-                // Chuột PHẢI trong EDIT mode + hover vạch → hiện menu
                 if (currentMode == InteractionType.EDIT_MARKINGS && hoveredBoundary != null) {
                     showMarkingMenu(hoveredBoundary, e.getScreenX(), e.getScreenY());
-                } else {
-                    hideActiveMenu(); // đóng menu nếu đang mở
+                } else if (currentMode == InteractionType.EDIT_MARKINGS) {
+                    // Chuột phải ra ngoài đường trong EDIT_MARKINGS → thoát, restore mode cũ
+                    double wxE = toWorldX(e.getX()), wyE = toWorldY(e.getY());
+                    if (hitTestSegmentForPopup(wxE, wyE) == null) {
+                        setInteractionType(previousMode);
+                        if (onMarkingModeEntered != null) onMarkingModeEntered.accept(null);
+                    }
+                    hideActiveMenu();
                     lastMouseX = e.getX(); lastMouseY = e.getY();
+                } else {
+                    // Chuột phải trong BẤT KỲ mode nào: nếu trỏ vào đường → pin popup + nút Sửa
+                    double wxR = toWorldX(e.getX()), wyR = toWorldY(e.getY());
+                    RoadSegment rightSeg = hitTestSegmentForPopup(wxR, wyR);
+                    if (rightSeg != null) {
+                        pinRoadTip(rightSeg, e.getScreenX(), e.getScreenY());
+                    } else {
+                        // Click chuột phải ra ngoài đường → đóng popup nếu đang pin
+                        if (tipPinned) hideRoadTip();
+                        hideActiveMenu();
+                        lastMouseX = e.getX(); lastMouseY = e.getY();
+                    }
                 }
                 return;
             }
             if (e.getButton() != MouseButton.PRIMARY) return;
-            hideActiveMenu(); // click trái bất kỳ đâu → đóng menu
+            hideActiveMenu();
+
+            // Click trái ra ngoài đường → ẩn popup nếu đang pin
+            double wx0 = toWorldX(e.getX()), wy0 = toWorldY(e.getY());
+            if (tipPinned && hitTestSegmentForPopup(wx0, wy0) == null) hideRoadTip();
+
+            // Ctrl+Click trong BẤT KỲ mode nào → chọn đường để sửa
+            if (e.isControlDown() && currentMode != InteractionType.DELETE) {
+                RoadSegment clicked = hitTestSegment(wx0, wy0);
+                selectedSegment = clicked;
+                if (onSegmentSelected != null) onSegmentSelected.accept(clicked);
+                redraw();
+                if (clicked != null) return; // đừng thực hiện action mode
+            }
 
             if (currentMode == InteractionType.PAN) {
+                // Click trái trong PAN mode: chọn đường để sửa (không chọn arm stubs)
+                double wx2 = toWorldX(e.getX()), wy2 = toWorldY(e.getY());
+                RoadSegment clicked = hitTestSegment(wx2, wy2);
+                if (clicked != null && clicked.isConnector()) clicked = null; // bỏ qua stub
+                if (clicked != null) {
+                    selectedSegment = clicked;
+                    redraw();
+                    // Thông báo App cập nhật nút
+                    if (onSegmentSelected != null) onSegmentSelected.accept(clicked);
+                    return;
+                } else {
+                    selectedSegment = null;
+                    if (onSegmentSelected != null) onSegmentSelected.accept(null);
+                    redraw();
+                }
                 lastMouseX = e.getX(); lastMouseY = e.getY();
 
             } else if (currentMode == InteractionType.DELETE) {
@@ -575,13 +972,21 @@ public class SimulationView extends Canvas {
                 }
                 drawCurrentX = drawStartX; drawCurrentY = drawStartY;
                 isDrawing = true; redraw();
+            } else if (currentMode == InteractionType.EDIT_MARKINGS) {
+                // Click trái ra ngoài đường → thoát, restore mode cũ
+                double wx1 = toWorldX(e.getX()), wy1 = toWorldY(e.getY());
+                if (hitTestSegmentForPopup(wx1, wy1) == null) {
+                    setInteractionType(previousMode);
+                    if (onMarkingModeEntered != null) onMarkingModeEntered.accept(null);
+                }
             }
-            // EDIT_MARKINGS: chuột trái không làm gì (menu chỉ qua chuột phải)
         });
 
         // MOUSE_DRAGGED
         addEventHandler(MouseEvent.MOUSE_DRAGGED, e -> {
             if (e.getButton() == MouseButton.SECONDARY) {
+                // Không pan khi popup đang pin — tránh bản đồ trôi lúc người dùng giữ chuột phải để đọc
+                if (tipPinned) return;
                 translateX += e.getX() - lastMouseX;
                 translateY += e.getY() - lastMouseY;
                 lastMouseX = e.getX(); lastMouseY = e.getY();
@@ -591,9 +996,16 @@ public class SimulationView extends Canvas {
             if (e.getButton() != MouseButton.PRIMARY) return;
 
             if (currentMode == InteractionType.PAN) {
-                translateX += e.getX() - lastMouseX;
-                translateY += e.getY() - lastMouseY;
+                double dX = e.getX() - lastMouseX;
+                double dY = e.getY() - lastMouseY;
+                translateX += dX;
+                translateY += dY;
                 lastMouseX = e.getX(); lastMouseY = e.getY();
+                // Nếu popup đang pinned, di nó theo world (giữ vị trí tương đối)
+                if (tipPinned && roadInfoPopup.isShowing()) {
+                    roadInfoPopup.setAnchorX(roadInfoPopup.getAnchorX() + dX);
+                    roadInfoPopup.setAnchorY(roadInfoPopup.getAnchorY() + dY);
+                }
                 redraw();
 
             } else if (currentMode == InteractionType.DRAW_ROAD && isDrawing) {
@@ -625,22 +1037,44 @@ public class SimulationView extends Canvas {
                 undoStack.pop(); redraw(); return;
             }
 
-            // Nếu số làn > 8: tạo vòng xuyến thay vì đường thẳng
-            if (currentLaneConfig > 8) {
-                placeRoundabout(drawStartX, drawStartY, drawCurrentX, drawCurrentY);
-                updateRenderData();
-                return;
-            }
+            // Roundabout không còn được trigger từ số làn nữa — dùng mode PLACE_INTERSECTION
 
-            List<Lane> newLanes = SimulationApp.createLanes(currentLaneConfig);
+            List<Lane> newLanes = (laneFactory != null)
+                    ? laneFactory.apply(currentLaneConfig)
+                    : SimulationApp.createLanes(currentLaneConfig);
 
             if (autoIntersect) {
                 commitWithIntersections(drawStartX, drawStartY, drawCurrentX, drawCurrentY, newLanes);
             } else {
-                network.addSegment(new RoadSegment(drawStartX, drawStartY, drawCurrentX, drawCurrentY, newLanes));
+                network.addSegment(makeSegment(drawStartX, drawStartY, drawCurrentX, drawCurrentY, newLanes));
+                // Đồng bộ arm stubs tại 2 endpoint ngay cả khi không autoIntersect
+                syncStubLanesAt(drawStartX, drawStartY, newLanes);
+                syncStubLanesAt(drawCurrentX, drawCurrentY, newLanes);
             }
             updateRenderData();
         });
+    }
+
+    /**
+     * Tạo RoadSegment hoặc HighwaySegment tuỳ theo highwayMode.
+     */
+    private RoadSegment makeSegment(double x1, double y1, double x2, double y2, List<Lane> lanes) {
+        if (highwayMode) {
+            int minLanes = emergencyLane ? 3 : 2;
+            // Đảm bảo đủ làn — highway cần tối thiểu 2 (hoặc 3 nếu có làn khẩn cấp)
+            List<Lane> paddedLanes = new ArrayList<>(lanes);
+            while (paddedLanes.size() < minLanes) {
+                int idx = paddedLanes.size();
+                Lane.Direction dir = (idx % 2 == 0) ? Lane.Direction.FORWARD : Lane.Direction.BACKWARD;
+                paddedLanes.add(new Lane(idx, dir, 3.5,
+                        java.util.EnumSet.of(Lane.VehicleCategory.CAR, Lane.VehicleCategory.BUS),
+                        java.util.EnumSet.of(Lane.Movement.STRAIGHT),
+                        Lane.MarkingType.DASHED, Lane.MarkingType.DASHED));
+            }
+            return new com.myteam.traffic.model.infrastructure.HighwaySegment(
+                    x1, y1, x2, y2, paddedLanes, highwayMinSpeed, emergencyLane);
+        }
+        return new RoadSegment(x1, y1, x2, y2, lanes);
     }
 
     /**
@@ -765,6 +1199,97 @@ public class SimulationView extends Canvas {
             network.addSegment(tail);
             if (lastNode != null) lastNode.connectRoad(tail, ConnectionPoint.End.START);
         }
+
+        // ── Bước 3: Đồng bộ số làn arm stubs tại 2 endpoint ─────────────────
+        // Nếu endpoint của đường mới snap vào đầu/cuối của arm stub (connector=true),
+        // thì replace stub để khớp số làn với đường mới → junction fill đúng kích thước
+        syncStubLanesAt(x1, y1, newLanes);
+        syncStubLanesAt(x2, y2, newLanes);
+
+        // ── Bước 4: Xóa arm stubs đã được "thay thế" bởi đường thật ─────────
+        // Nếu endpoint của đường mới trùng với endpoint của một stub → stub đó không còn cần nữa
+        removeStubsReplacedByRoadAt(x1, y1);
+        removeStubsReplacedByRoadAt(x2, y2);
+    }
+
+    /**
+     * Xóa arm stub (connector=true) có endpoint BẮT ĐẦU tại (wx,wy) —
+     * nghĩa là đường thật đã "thế chỗ" stub đó.
+     * Không xóa nếu tại (wx,wy) không có intersection (tức stub chưa được nối vào giao lộ nào).
+     */
+    private void removeStubsReplacedByRoadAt(double wx, double wy) {
+        if (network == null) return;
+        // Chỉ xóa khi có intersection thật tại điểm này
+        Intersection inter = network.findNearestIntersection(wx, wy, 60.0);
+        if (inter == null) return;
+        double icx = inter.getCenterX(), icy = inter.getCenterY();
+        for (RoadSegment seg : new ArrayList<>(network.getSegments())) {
+            if (!seg.isConnector()) continue;
+            // Stub bắt đầu TỪ tâm giao lộ ra ngoài → đầu START là tâm giao lộ
+            boolean startAtCenter = isSamePoint(seg.getStartX(), seg.getStartY(), icx, icy);
+            boolean endAtCenter   = isSamePoint(seg.getEndX(),   seg.getEndY(),   icx, icy);
+            if (!startAtCenter && !endAtCenter) continue;
+            // Kiểm tra đầu ngoài (tip) của stub — nếu có đường thật nối vào đó thì xóa stub
+            double tipX = startAtCenter ? seg.getEndX()   : seg.getStartX();
+            double tipY = startAtCenter ? seg.getEndY()   : seg.getStartY();
+            // Đường thật = không phải connector, có endpoint trùng với tip của stub
+            boolean hasRealRoad = network.getSegments().stream()
+                    .anyMatch(s -> !s.isConnector() && s != seg &&
+                            (isSamePoint(s.getStartX(), s.getStartY(), tipX, tipY) ||
+                                    isSamePoint(s.getEndX(),   s.getEndY(),   tipX, tipY)));
+            if (hasRealRoad) network.removeSegment(seg);
+        }
+    }
+
+    /**
+     * Nếu tại (wx, wy) có arm stub (connector=true), replace nó bằng bản mới có số làn = newLanes.
+     * Intersection radius sẽ tự tính lại từ số làn mới qua getRenderData().
+     */
+    private void syncStubLanesAt(double wx, double wy, List<Lane> newLanes) {
+        // Sync stubs có endpoint tại (wx, wy)
+        for (RoadSegment seg : new ArrayList<>(network.getSegments())) {
+            if (!seg.isConnector()) continue;
+            boolean atStart = isSamePoint(seg.getStartX(), seg.getStartY(), wx, wy);
+            boolean atEnd   = isSamePoint(seg.getEndX(),   seg.getEndY(),   wx, wy);
+            if (!atStart && !atEnd) continue;
+            if (seg.getLaneCount() == newLanes.size()) continue;
+            RoadSegment updated = seg.withNewLanes(rebuildLanesMatchingCount(seg.getLanes(), newLanes));
+            updated.setConnector(true);
+            network.replaceSegment(seg, updated);
+        }
+        // Nếu endpoint gần tâm intersection → sync TẤT CẢ stubs của intersection đó
+        Intersection inter = network.findNearestIntersection(wx, wy, 60.0);
+        if (inter == null) return;
+        double icx = inter.getCenterX(), icy = inter.getCenterY();
+        for (RoadSegment seg : new ArrayList<>(network.getSegments())) {
+            if (!seg.isConnector()) continue;
+            if (!isSamePoint(seg.getStartX(), seg.getStartY(), icx, icy) &&
+                    !isSamePoint(seg.getEndX(),   seg.getEndY(),   icx, icy)) continue;
+            if (seg.getLaneCount() == newLanes.size()) continue;
+            RoadSegment updated = seg.withNewLanes(rebuildLanesMatchingCount(seg.getLanes(), newLanes));
+            updated.setConnector(true);
+            network.replaceSegment(seg, updated);
+        }
+    }
+
+    /**
+     * Tạo danh sách làn mới: giữ pattern chiều (FWD/BWD) từ oldLanes, đổi số lượng theo newLanes.
+     * Dùng thông tin width + vehicle + movement từ newLanes làm template.
+     */
+    private List<Lane> rebuildLanesMatchingCount(List<Lane> oldLanes, List<Lane> newLanes) {
+        List<Lane> result = new ArrayList<>();
+        int n = newLanes.size();
+        for (int i = 0; i < n; i++) {
+            Lane template = newLanes.get(i);
+            // Giữ chiều đường từ oldLanes nếu có, không thì dùng template
+            Lane.Direction dir = (i < oldLanes.size())
+                    ? oldLanes.get(i).getDirection()
+                    : template.getDirection();
+            result.add(new Lane(i, dir, template.getWidth(),
+                    template.getAllowedVehicles(), template.getAllowedMovements(),
+                    template.getLeftMarking(), template.getRightMarking()));
+        }
+        return result;
     }
 
     /**
@@ -814,14 +1339,52 @@ public class SimulationView extends Canvas {
         if (network.findNearestIntersection(wx, wy, 25.0) != null) return;
 
         com.myteam.traffic.model.infrastructure.intersection.Intersection inter;
+        int armCount;
         switch (intersectionTypeToPlace) {
-            case "3"  -> inter = new com.myteam.traffic.model.infrastructure.intersection.ThreeWayIntersection(wx, wy);
-            case "5"  -> inter = new com.myteam.traffic.model.infrastructure.intersection.FiveWayIntersection(wx, wy);
-            case "ROUNDABOUT_S" -> inter = new com.myteam.traffic.model.infrastructure.intersection.RoundaboutIntersection(wx, wy, 4, 60);
-            case "ROUNDABOUT_L" -> inter = new com.myteam.traffic.model.infrastructure.intersection.RoundaboutIntersection(wx, wy, 6, 100);
-            default -> inter = new com.myteam.traffic.model.infrastructure.intersection.FourWayIntersection(wx, wy);
+            case "3"  -> { inter = new com.myteam.traffic.model.infrastructure.intersection.ThreeWayIntersection(wx, wy); armCount = 3; }
+            case "5"  -> { inter = new com.myteam.traffic.model.infrastructure.intersection.FiveWayIntersection(wx, wy);  armCount = 5; }
+            case "ROUNDABOUT_S" -> { inter = new com.myteam.traffic.model.infrastructure.intersection.RoundaboutIntersection(wx, wy, roundaboutBranches, roundaboutRadius);        armCount = roundaboutBranches; }
+            case "ROUNDABOUT_L" -> { inter = new com.myteam.traffic.model.infrastructure.intersection.RoundaboutIntersection(wx, wy, roundaboutBranches, roundaboutRadius * 1.6); armCount = roundaboutBranches; }
+            default -> { inter = new com.myteam.traffic.model.infrastructure.intersection.FourWayIntersection(wx, wy); armCount = 4; }
         }
         network.addIntersection(inter);
+
+        // Arm stubs: chiều rộng 1 làn = 20 world units → 5 làn = 100 world units half
+        // Stub phải đủ dài để junction radius (minArmLen * 0.4) > halfWidth đường
+        // halfWidth = laneCount * 20 / 2. Cần: stubLen * 0.4 > halfWidth → stubLen > halfWidth * 2.5
+        int laneCount = currentLaneConfig;
+        double halfWidth = laneCount * 20.0 / 2.0;
+        double stubLen  = Math.max(150.0, halfWidth * 3.0); // đủ dài cho mọi độ rộng
+
+        List<Lane> stubLanes = (laneFactory != null)
+                ? laneFactory.apply(laneCount)
+                : SimulationApp.createLanes(laneCount);
+
+        for (int i = 0; i < armCount; i++) {
+            // Góc thực tế theo từng loại giao lộ:
+            // Ngã 3: Bắc + Tây-Nam + Đông-Nam (hình chữ T ngược)
+            // Ngã 4: Bắc Đông Nam Tây
+            // Ngã 5: Bắc + Tây-Bắc + Đông-Bắc + Tây-Nam + Đông-Nam
+            // Ngã 6: đều 60°
+            double angleDeg;
+            if (armCount == 3) {
+                double[] angles3 = {-90, 150, 30}; // Bắc, Tây-Nam, Đông-Nam (chữ Y)
+                angleDeg = angles3[i];
+            } else if (armCount == 5) {
+                double[] angles5 = {-90, -162, -18, 126, 54}; // Bắc + 4 nhánh xòe ra
+                angleDeg = angles5[i];
+            } else {
+                angleDeg = -90 + 360.0 / armCount * i;
+            }
+            double angle = Math.toRadians(angleDeg);
+            double endX = wx + Math.cos(angle) * stubLen;
+            double endY = wy + Math.sin(angle) * stubLen;
+            RoadSegment stub = makeSegment(wx, wy, endX, endY, new ArrayList<>(stubLanes));
+            stub.setConnector(true);
+            network.addSegment(stub);
+            try { inter.connectRoad(stub, com.myteam.traffic.model.infrastructure.ConnectionPoint.End.START); }
+            catch (IllegalStateException ignored) {}
+        }
     }
 
     private double getPreviewRadius() {
