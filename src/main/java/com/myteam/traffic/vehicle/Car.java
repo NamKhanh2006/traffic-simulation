@@ -6,11 +6,11 @@ public class Car extends Vehicle {
 
     public Car(double x, double y, double angle, DriverBehavior behavior) {
         super(x, y, angle, behavior);
-        this.width = 4.0;
-        this.height = 2.0; 
-        this.maxSpeed = 60.0;
-        this.isEmergency = false; 
-        this.type = "Car";
+        this.setWidth(4.0);
+        this.setHeight(2.0); 
+        this.setMaxSpeed(60.0);
+        this.setEmergency(false); 
+        this.setType("Car");
     }
 
     @Override
