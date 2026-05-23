@@ -27,7 +27,7 @@ public class DimensionLimitRule implements TrafficRule {
     
     @Override
     public int getPriority() {
-    	
+    	return 10;
     }
 
 	public DimensionLimitRule(Double maxWeight, Double maxHeight, Double maxWidth, Double maxLength,
@@ -39,6 +39,7 @@ public class DimensionLimitRule implements TrafficRule {
 		this.maxLength = maxLength;
 		this.affectedVehicles = affectedVehicles;
 	}
+	
     
 }
 
