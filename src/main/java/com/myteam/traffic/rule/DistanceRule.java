@@ -2,6 +2,9 @@ package com.myteam.traffic.rule;
 
 import java.util.HashSet;
 import com.myteam.traffic.*;
+import com.myteam.traffic.vehicle.*;
+import com.myteam.traffic.context.*;
+import com.myteam.traffic.behavior.*;
 
 public class DistanceRule implements TrafficRule {
     private double minDistance;
@@ -16,6 +19,6 @@ public class DistanceRule implements TrafficRule {
     
     @Override
     public int getPriority() {
-    	
+    	return 50;
     }
 }

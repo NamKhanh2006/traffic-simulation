@@ -56,7 +56,7 @@ public class MarkingRule implements TrafficRule{
 	
 	@Override
 	public boolean isAllowed(Vehicle v, Action a, RoadContext c) {
-		if (affectedVehicles != null && !affectedVehicles.contains(v))
+		if (affectedVehicles != null && !affectedVehicles.contains(v.getType()))
 			return true;
 		List<RoadMarking> markings = c.getMarkings();
 		
