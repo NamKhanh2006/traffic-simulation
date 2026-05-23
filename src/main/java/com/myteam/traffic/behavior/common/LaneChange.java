@@ -1,6 +1,6 @@
-package traffic.behavior.common;
+package com.myteam.traffic.behavior.common;
 
-import traffic.model.vehicle.Vehicle;
+import com.myteam.traffic.vehicle.Vehicle;
 
 /**
  * Utility class for lane-change manoeuvres.
