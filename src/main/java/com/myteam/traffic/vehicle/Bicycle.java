@@ -11,7 +11,7 @@ public class Bicycle extends Vehicle {
         this.setHeight(0.6);
         this.setMaxSpeed(20.0);
         this.setEmergency(false);
-        this.setType("Bicycle");
+        this.setType(VehicleType.BICYCLE);
     }
 
     @Override

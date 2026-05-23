@@ -5,6 +5,8 @@ import com.myteam.traffic.*;
 import com.myteam.traffic.vehicle.*;
 import com.myteam.traffic.context.*;
 import com.myteam.traffic.behavior.*;
+import com.myteam.traffic.behavior.common.*;
+import com.myteam.traffic.vehicle.emergency.*;
 
 public class DistanceRule implements TrafficRule {
     private double minDistance;

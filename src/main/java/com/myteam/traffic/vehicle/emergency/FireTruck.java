@@ -1,6 +1,7 @@
 package com.myteam.traffic.vehicle.emergency;
 
 import com.myteam.traffic.behavior.DriverBehavior;
+import com.myteam.traffic.vehicle.VehicleType;
 
 public class FireTruck extends EmergencyVehicle {
 
@@ -9,7 +10,7 @@ public class FireTruck extends EmergencyVehicle {
         
         this.setWidth(6.0);
         this.setHeight(2.5);
-        this.setType("FireTruck");
+        this.setType(VehicleType.EMERGENCY);
         this.setMaxSpeed(70.0); // Chậm do cứu thương do nặng
     }
 

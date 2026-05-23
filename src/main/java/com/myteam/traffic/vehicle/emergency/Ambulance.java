@@ -1,6 +1,7 @@
 package com.myteam.traffic.vehicle.emergency;
 
 import com.myteam.traffic.behavior.DriverBehavior;
+import com.myteam.traffic.vehicle.VehicleType;
 
 public class Ambulance extends EmergencyVehicle {
 
@@ -9,6 +10,6 @@ public class Ambulance extends EmergencyVehicle {
         
         this.setWidth(4.5);
         this.setHeight(2.2);
-        this.setType("Ambulance");
+        this.setType(VehicleType.EMERGENCY);
     }
 }

@@ -10,7 +10,7 @@ public class Car extends Vehicle {
         this.setHeight(2.0); 
         this.setMaxSpeed(60.0);
         this.setEmergency(false); 
-        this.setType("Car");
+        this.setType(VehicleType.CAR);
     }
 
     @Override

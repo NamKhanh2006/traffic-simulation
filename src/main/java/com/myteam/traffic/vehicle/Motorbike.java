@@ -13,7 +13,7 @@ public class Motorbike extends Vehicle {
         this.setHeight(1.0);
         this.setMaxSpeed(50.0);  
         this.setEmergency(false);
-        this.setType("Motorbike");
+        this.setType(VehicleType.MOTORBIKE);
     }
 
     @Override

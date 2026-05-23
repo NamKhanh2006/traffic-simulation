@@ -10,7 +10,7 @@ public abstract class Vehicle {
     protected double height;
     protected double speed;
     protected double maxSpeed;
-    protected String type;
+    protected VehicleType type;
     protected boolean isEmergency;
     protected DriverBehavior behavior;
 
@@ -105,11 +105,11 @@ public abstract class Vehicle {
         this.maxSpeed = maxSpeed;
     }
 
-    public String getType() {
+    public VehicleType getType() {
         return type;
     }
 
-    public void setType(String type) {
+    public void setType(VehicleType type) {
         this.type = type;
     }
 

@@ -1,10 +1,13 @@
 package com.myteam.traffic.rule;
 
 import java.util.*;
+import com.myteam.traffic.behavior.*;
+import com.myteam.traffic.behavior.common.*;
 import com.myteam.traffic.marking.*;
 import com.myteam.traffic.common.*;
 import com.myteam.traffic.context.RoadContext;
 import com.myteam.traffic.vehicle.Vehicle;
+import com.myteam.traffic.vehicle.*;
 
 /*
 public class MarkingRule implements TrafficRule {
@@ -52,7 +55,7 @@ public class MarkingRule implements TrafficRule {
 // The commented code above will be abandoned
 
 public class MarkingRule implements TrafficRule{
-	private HashSet<Vehicle> affectedVehicles; // null = ALL VEHICLES AFFECTED
+	private HashSet<VehicleType> affectedVehicles; // null = ALL VEHICLES AFFECTED
 	
 	@Override
 	public boolean isAllowed(Vehicle v, Action a, RoadContext c) {
@@ -71,6 +74,6 @@ public class MarkingRule implements TrafficRule{
 	
 	@Override
 	public int getPriority() {
-		
+		return 40;
 	}
 }

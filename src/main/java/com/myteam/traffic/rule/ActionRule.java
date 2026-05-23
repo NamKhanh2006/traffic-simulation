@@ -1,5 +1,10 @@
 package com.myteam.traffic.rule;
 import java.util.HashSet;
+import com.myteam.traffic.behavior.*;
+import com.myteam.traffic.behavior.common.*;
+import com.myteam.traffic.vehicle.*;
+import com.myteam.traffic.vehicle.emergency.*;
+import com.myteam.traffic.context.*;
 
 /*
 public class ActionRule implements TrafficRule {
@@ -66,5 +71,7 @@ public class ActionRule implements TrafficRule {
     }
 
     @Override
-    public int getPriority() { return 20; }
+    public int getPriority() {
+    	return 20;
+    }
 }

@@ -2,6 +2,11 @@ package com.myteam.traffic.rule;
 
 import java.util.HashSet;
 import com.myteam.traffic.*;
+import com.myteam.traffic.behavior.*;
+import com.myteam.traffic.behavior.common.*;
+import com.myteam.traffic.vehicle.*;
+import com.myteam.traffic.vehicle.emergency.*;
+import com.myteam.traffic.context.*;
 
 
 public class DimensionLimitRule implements TrafficRule {
@@ -25,12 +30,7 @@ public class DimensionLimitRule implements TrafficRule {
         return true;
     }
     
-    @Override
-    public int getPriority() {
-    	return 10;
-    }
-
-	public DimensionLimitRule(Double maxWeight, Double maxHeight, Double maxWidth, Double maxLength,
+    public DimensionLimitRule(Double maxWeight, Double maxHeight, Double maxWidth, Double maxLength,
 			HashSet<VehicleType> affectedVehicles) {
 		super();
 		this.maxWeight = maxWeight;
@@ -38,6 +38,11 @@ public class DimensionLimitRule implements TrafficRule {
 		this.maxWidth = maxWidth;
 		this.maxLength = maxLength;
 		this.affectedVehicles = affectedVehicles;
+	}
+
+	@Override
+	public int getPriority() {
+		return 10;
 	}
 	
     
