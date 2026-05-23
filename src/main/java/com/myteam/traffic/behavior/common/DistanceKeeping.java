@@ -1,7 +1,6 @@
-package traffic.behavior.common;
+package com.myteam.traffic.behavior.common;
 
-import traffic.common.Action;
-import traffic.model.vehicle.Vehicle;
+import com.myteam.traffic.vehicle.Vehicle;
 
 /**
  * Utility class for safe following-distance logic.
