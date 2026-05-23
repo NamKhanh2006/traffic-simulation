@@ -42,4 +42,4 @@ public class FourWayIntersection extends Intersection {
         return "Four-way intersection (Crossroad)";
     }
 }
->>>>>>> 0565e862455df6fbead815eb198c9e1afc962a09
+

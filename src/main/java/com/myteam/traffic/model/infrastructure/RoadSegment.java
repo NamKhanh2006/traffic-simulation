@@ -176,4 +176,4 @@ public class RoadSegment {
      */
     public List<Lane> getLanes() { return lanes; }
 }
->>>>>>> 0565e862455df6fbead815eb198c9e1afc962a09
+

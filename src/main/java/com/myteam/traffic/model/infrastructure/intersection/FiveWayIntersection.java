@@ -43,4 +43,4 @@ public class FiveWayIntersection extends Intersection {
         return "Five-way intersection (Star-junction)";
     }
 }
->>>>>>> 0565e862455df6fbead815eb198c9e1afc962a09
+
