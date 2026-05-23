@@ -1,28 +1,39 @@
-package com.myteam.traffic.behavior;
+package traffic.behavior;
 
-/*import Traffic.vehicle.Vehicle;
-import Traffic.traffic.TrafficLight;
-import Traffic.behavior.common.*;
-*/
-public class NormalDriver extends DriverBehavior {
+import traffic.common.Action;
+import traffic.model.context.RoadContext;
+import traffic.model.vehicle.Vehicle;
 
-    /*@Override
-    public void decide(Vehicle self, Vehicle front, TrafficLight light) {
+/**
+ * A law-abiding, safety-conscious driver.
+ *
+ * Decision priority (highest → lowest):
+ *   1. Red light ahead      → STOP
+ *   2. Too close to front   → SLOW_DOWN
+ *   3. Emergency vehicle nearby → CHANGE_LANE
+ *   4. Default              → MOVE_FORWARD
+ */
+public class NormalDriver implements DriverBehavior {
 
-        DistanceKeeping.keepDistance(self, front);
+    @Override
+    public javax.swing.Action decideAction(Vehicle v, RoadContext context) {
 
-        if (light.isRed()) {
-            self.stop();
-            System.out.println("Normal: dung den do");
-            return;
+        // 1. Obey red light
+        if (context.hasRedLightAhead()) {
+            return Action.STOP;
         }
 
-        if (front != null && front.isEmergency()) {
-            self.slowDown();
-            LaneChange.changeLane(self);
-            System.out.println("Normal: nhuong duong xe uu tien");
+        // 2. Keep a safe following distance
+        if (context.isTooCloseToFront()) {
+            return Action.SLOW_DOWN;
         }
 
-        self.moveForward();
-    }*/
+        // 3. Yield to emergency vehicles
+        if (context.hasEmergencyNearby()) {
+            return Action.CHANGE_LANE;
+        }
+
+        // 4. All clear – move forward
+        return Action.MOVE_FORWARD;
+    }
 }
