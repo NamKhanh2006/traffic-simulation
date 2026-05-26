@@ -62,6 +62,8 @@ import com.myteam.traffic.marking.RoadMarking;
 import com.myteam.traffic.vehicle.Vehicle;
 import com.myteam.traffic.common.*;
 import com.myteam.traffic.light.*;
+import com.myteam.traffic.model.geometry.*;
+import com.myteam.traffic.behavior.common.*;
 
 import java.util.*;
 

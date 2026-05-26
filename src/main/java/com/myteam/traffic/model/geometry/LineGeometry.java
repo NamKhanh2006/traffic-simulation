@@ -1,21 +1,21 @@
 package com.myteam.traffic.model.geometry;
 
-public class LineGeometry implements Geometry {
-	private Point start;
-	private Point end;
+public class LineGeometry {
+	private Position start;
+	private Position end;
 	private float width;
 	
 	// Getters and setters
-	public Point getStart() {
+	public Position getStart() {
 		return start;
 	}
-	public void setStart(Point start) {
+	public void setStart(Position start) {
 		this.start = start;
 	}
-	public Point getEnd() {
+	public Position getEnd() {
 		return end;
 	}
-	public void setEnd(Point end) {
+	public void setEnd(Position end) {
 		this.end = end;
 	}
 	public float getWidth() {
@@ -26,7 +26,7 @@ public class LineGeometry implements Geometry {
 	}
 	
 	// Constructor
-	public LineGeometry(Point start, Point end, float width) {
+	public LineGeometry(Position start, Position end, float width) {
 		super();
 		this.start = start;
 		this.end = end;
