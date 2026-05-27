@@ -1,11 +1,14 @@
 package com.myteam.traffic.vehicle;
 
 import com.myteam.traffic.behavior.DriverBehavior;
+import com.myteam.traffic.model.geometry.*;
 
 public abstract class Vehicle {
-    protected double x;
-    protected double y;
-    protected double angle; // Góc rẽ
+    //protected double x;
+    //protected double y;
+	protected Position position;
+    //protected double angle; // Góc rẽ
+	protected Direction direction;
     protected double width;
     protected double height;
     protected double speed;
@@ -15,10 +18,9 @@ public abstract class Vehicle {
     protected DriverBehavior behavior;
 
     // Constructor chuẩn
-    public Vehicle(double x, double y, double angle, DriverBehavior behavior) {
-        this.x = x;
-        this.y = y;
-        this.angle = angle;
+    public Vehicle(Position position, Direction direction, DriverBehavior behavior) {
+        this.position = position;
+        this.direction = direction;
         this.behavior = behavior;
         this.speed = 0; // Mặc định đứng yên
     }
@@ -49,10 +51,12 @@ public abstract class Vehicle {
         speed = 0;
     }
 
+    /*
     public double getX() {
         return x;
     }
-
+    
+    
     public void setX(double x) {
         this.x = x;
     }
@@ -72,6 +76,7 @@ public abstract class Vehicle {
     public void setAngle(double angle) {
         this.angle = angle;
     }
+    */
 
     public double getWidth() {
         return width;

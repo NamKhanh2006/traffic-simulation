@@ -9,7 +9,7 @@ public class Position {
     }
     
     // =========================================================
-    // Getters
+    // Getters and setters
     // =========================================================
     public double getX() {
 		return x;
