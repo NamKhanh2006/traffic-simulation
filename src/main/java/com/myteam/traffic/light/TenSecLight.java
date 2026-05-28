@@ -1,3 +1,4 @@
+/*
 package com.myteam.traffic.light;
 
 public class TenSecLight extends TrafficLight {
@@ -21,3 +22,4 @@ public class TenSecLight extends TrafficLight {
         switchTo(next);
     }
 }
+*/
