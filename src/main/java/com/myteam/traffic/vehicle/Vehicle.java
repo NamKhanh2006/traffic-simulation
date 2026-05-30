@@ -24,8 +24,9 @@ public abstract class Vehicle {
 
     // Di chuyển 2D
     public void moveForward() {
-    	position = new Position(position.getX() + speed * Math.cos(direction.toRadians()),
-    			position.getY() + speed * Math.sin(direction.toRadians()));
+        double newX = position.getX() + speed * Math.cos(direction.toRadians());
+        double newY = position.getY() + speed * Math.sin(direction.toRadians());
+        this.position = new Position(newX, newY);
     }
 
     /*

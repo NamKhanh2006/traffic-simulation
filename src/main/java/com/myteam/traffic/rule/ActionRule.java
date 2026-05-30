@@ -6,34 +6,6 @@ import com.myteam.traffic.vehicle.*;
 import com.myteam.traffic.vehicle.emergency.*;
 import com.myteam.traffic.context.*;
 
-/*
-public class ActionRule implements TrafficRule {
-    private HashSet<Action> allowed;     // nếu null → không giới hạn
-    private HashSet<Action> banned;      // nếu null → không cấm
-    private HashSet<VehicleType> vehicles; // áp dụng cho loại xe nào (null = tất cả)
-
-    public boolean isAllowed(Vehicle v, Action a, RoadContext c) {
-        if (vehicles != null && !vehicles.contains(v.getType()))
-        	return true;
-
-        if (allowed != null && !allowed.contains(a))
-        	return false;
-        if (banned != null && banned.contains(a))
-        	return false;
-        	
-        Lane currentLane = v.getLane();
-        HashSet<allowedOnCurrentLane> = currentLane.getAllowedActions();
-        
-        if !allowedOnCurrentLane.contains(a)
-        	return false;
-
-        return true;
-    }
-}
-*/
-// The commented code above will be abandoned.
-
-
 public class ActionRule implements TrafficRule {
     private HashSet<Action> allowed;     
     private HashSet<Action> banned;      
