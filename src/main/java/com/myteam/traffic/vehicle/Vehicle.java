@@ -49,6 +49,14 @@ public abstract class Vehicle {
     public void stop() {
         speed = 0;
     }
+    
+    public Position getPosition() {
+    	return position;
+    }
+    
+    public void setPosition(Position position) {
+    	this.position = position;
+    }
 
     public double getX() {
         return position.getX();
