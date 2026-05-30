@@ -1,63 +1,7 @@
-/*
 package com.myteam.traffic.context;
 
 import com.myteam.traffic.model.infrastructure.*;
 import com.myteam.traffic.rule.*;
-import com.myteam.traffic.sign.*;
-import com.myteam.traffic.marking.RoadMarking;
-
-import java.util.*;
-
-public class RoadContext {
-
-    private boolean redLight;
-    private List<RoadMarking> markings = new ArrayList<>();
-    private List<TrafficSign> signs = new ArrayList<>();
-    private Lane currentLane;  // The Lane that the vehicle is currently on (each vehicle builds its own context)
-
-    public boolean isRedLight() {
-        return redLight;
-    }
-
-    public void setRedLight(boolean redLight) {
-        this.redLight = redLight;
-    }
-
-    public List<RoadMarking> getMarkings() {
-        return markings;
-    }
-
-    public void addMarking(RoadMarking m) {
-        markings.add(m);
-    }
-    
-    public List<TrafficRule> getLocalRules() {
-        List<TrafficRule> localRules = new ArrayList<>();
-        
-        // Lấy luật từ biển báo trong context
-        for (TrafficSign sign : this.signs) {
-            if (sign.getRule() != null)
-            	localRules.add(sign.getRule());
-            // TODO: Write getRule() method to get the rule that a sign implements
-        }
-        
-        // Lấy luật từ làn đường hiện tại
-        if (this.currentLane != null) {
-            localRules.addAll(this.currentLane.getRules());
-            // TODO: Write the getRules() method for the Lane class to get rules applied on a lane
-        }
-        
-        return localRules;
-    }
-    
-}
-*/
-
-package com.myteam.traffic.context;
-
-import com.myteam.traffic.model.infrastructure.*;
-import com.myteam.traffic.rule.*;
-import com.myteam.traffic.sign.*;
 import com.myteam.traffic.marking.RoadMarking;
 import com.myteam.traffic.vehicle.Vehicle;
 import com.myteam.traffic.common.*;
@@ -89,6 +33,8 @@ import java.util.*;
  * </pre>
  */
 public class RoadContext {
+	// Lưu subject vào RoadContext khi build
+	private final Vehicle subject; // xe mà context này được tạo cho
 
     // =========================================================
     // Trạng thái hạ tầng (Infrastructure state)
@@ -99,9 +45,6 @@ public class RoadContext {
 
     /** Vạch kẻ đường trên đoạn đường hiện tại. */
     private final List<RoadMarking> markings;
-
-    /** Biển báo giao thông trên đoạn đường hiện tại. */
-    private final List<TrafficSign> signs;
 
     /** Làn đường mà xe đang chạy. */
     private final Lane currentLane;
@@ -133,7 +76,6 @@ public class RoadContext {
     private RoadContext(Builder builder) {
         this.lightState       = builder.lightState;
         this.markings         = Collections.unmodifiableList(new ArrayList<>(builder.markings));
-        this.signs            = Collections.unmodifiableList(new ArrayList<>(builder.signs));
         this.currentLane      = builder.currentLane;
         this.currentSegment   = builder.currentSegment;
         this.nearbyVehicles   = Collections.unmodifiableList(new ArrayList<>(builder.nearbyVehicles));
@@ -160,7 +102,6 @@ public class RoadContext {
     }
 
     public List<RoadMarking> getMarkings()   { return markings; }
-    public List<TrafficSign> getSigns()      { return signs; }
     public Lane getCurrentLane()             { return currentLane; }
     public RoadSegment getCurrentSegment()   { return currentSegment; }
 
@@ -241,11 +182,6 @@ public class RoadContext {
     public List<TrafficRule> getLocalRules() {
         List<TrafficRule> localRules = new ArrayList<>();
 
-        for (TrafficSign sign : signs) {
-            TrafficRule rule = sign.getRule();
-            if (rule != null) localRules.add(rule);
-        }
-
         if (currentLane != null) {
             localRules.addAll(currentLane.getRules());
         }
@@ -268,7 +204,6 @@ public class RoadContext {
         // Giá trị mặc định an toàn
         private TrafficLightState       lightState       = TrafficLightState.GREEN;
         private List<RoadMarking>       markings         = new ArrayList<>();
-        private List<TrafficSign>       signs            = new ArrayList<>();
         private Lane                    currentLane      = null;
         private RoadSegment             currentSegment   = null;
         private List<Vehicle>           nearbyVehicles   = new ArrayList<>();
@@ -281,11 +216,6 @@ public class RoadContext {
 
         public Builder markings(List<RoadMarking> markings) {
             this.markings = markings;
-            return this;
-        }
-
-        public Builder signs(List<TrafficSign> signs) {
-            this.signs = signs;
             return this;
         }
 
@@ -312,5 +242,42 @@ public class RoadContext {
         public RoadContext build() {
             return new RoadContext(this);
         }
+        
+        // Builder thêm:
+     	public Builder subject(Vehicle v) { this.subject = v; return this; }
     }
+    
+    // =========================================================
+    // Convenience methods — dùng bởi DriverBehavior
+    // =========================================================
+
+    /** Đèn phía trước có đang đỏ không? */
+    public boolean hasRedLightAhead() {
+    	return lightState == TrafficLightState.RED;
+    }
+
+    /** Có xe nào đang ở phía trước không? */
+    public boolean hasFrontVehicle() {
+    	return nearbyVehicles.stream()
+         .anyMatch(other -> isAhead(.anyMatch(other -> isAhead(subject, other))));
+     // ⚠️ isAhead() cần biết subject — xem ghi chú bên dưới
+    }
+
+ 	/** Xe phía trước có đang quá gần không? */
+ 	public boolean isTooCloseToFront() {
+ 		return nearbyVehicles.stream()
+         .filter(other -> isAhead(...))
+         .mapToDouble(other -> {
+             Position otherPos = positionSnapshot.getOrDefault(other, other.getPosition());
+             return positionSnapshot.get(.anyMatch(other -> isAhead(subject, other))).distanceTo(otherPos);
+         })
+         .min()
+         .orElse(Double.MAX_VALUE) < DistanceRule.SAFE_DISTANCE;
+ 	}
+
+ 	/** Có xe khẩn cấp nào gần đây không? */
+ 	public boolean hasEmergencyNearby() {
+ 		return nearbyVehicles.stream()
+         .anyMatch(Vehicle::isEmergency);
+ 	} 	
 }
