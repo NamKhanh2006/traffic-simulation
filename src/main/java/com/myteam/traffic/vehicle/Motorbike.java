@@ -1,12 +1,13 @@
 package com.myteam.traffic.vehicle;
 
 import com.myteam.traffic.behavior.DriverBehavior;
+import com.myteam.traffic.model.geometry.*;
 
 public class Motorbike extends Vehicle {
 
-    public Motorbike(double x, double y, double angle, DriverBehavior behavior) {
+    public Motorbike(Position position, Direction direction, DriverBehavior behavior) {
         
-        super(x, y, angle, behavior);
+        super(position, direction, behavior);
         
         
         this.setWidth(2.0);      

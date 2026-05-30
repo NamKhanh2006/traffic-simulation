@@ -4,10 +4,7 @@ import com.myteam.traffic.behavior.DriverBehavior;
 import com.myteam.traffic.model.geometry.*;
 
 public abstract class Vehicle {
-    //protected double x;
-    //protected double y;
 	protected Position position;
-    //protected double angle; // Góc rẽ
 	protected Direction direction;
     protected double width;
     protected double height;
@@ -27,10 +24,11 @@ public abstract class Vehicle {
 
     // Di chuyển 2D
     public void moveForward() {
-        x += speed * Math.cos(angle);
-        y += speed * Math.sin(angle);
+    	position = new Position(position.getX() + speed * Math.cos(direction.toRadians()),
+    			position.getY() + speed * Math.sin(direction.toRadians()));
     }
 
+    /*
     public void turnLeft() {
         angle -= Math.PI / 2; // Rẽ trái 90 độ
     }
@@ -38,6 +36,7 @@ public abstract class Vehicle {
     public void turnRight() {
         angle += Math.PI / 2; // Rẽ phải 90 độ
     }
+    */
 
     public void accelerate() {
         speed = Math.min(maxSpeed, speed + 1);
@@ -51,32 +50,33 @@ public abstract class Vehicle {
         speed = 0;
     }
 
-    /*
     public double getX() {
-        return x;
+        return position.getX();
     }
     
-    
+    /*
     public void setX(double x) {
         this.x = x;
     }
-
+	*/
+    
     public double getY() {
-        return y;
+        return position.getY();
     }
 
+    /*
     public void setY(double y) {
         this.y = y;
     }
-
-    public double getAngle() {
-        return angle;
-    }
-
-    public void setAngle(double angle) {
-        this.angle = angle;
-    }
     */
+
+    public Direction getDirection() {
+        return direction;
+    }
+
+    public void setDirection(Direction direction) {
+        this.direction = direction;
+    }
 
     public double getWidth() {
         return width;
