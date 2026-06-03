@@ -23,4 +23,9 @@ public class DistanceRule implements TrafficRule {
     public int getPriority() {
     	return 50;
     }
+    
+    @Override
+    public boolean appliesTo(Vehicle v) {
+    	return true; // Any vehicle must keep a distance with the vehicle in front of it
+    }
 }

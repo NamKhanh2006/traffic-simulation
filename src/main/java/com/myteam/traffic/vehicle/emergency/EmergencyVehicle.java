@@ -1,14 +1,16 @@
 package com.myteam.traffic.vehicle.emergency;
 
-import com.myteam.traffic.vehicle.Vehicle;
 import com.myteam.traffic.behavior.DriverBehavior;
+import com.myteam.traffic.model.geometry.Direction;
+import com.myteam.traffic.model.geometry.Position;
+import com.myteam.traffic.vehicle.Vehicle;
 
 public abstract class EmergencyVehicle extends Vehicle {
     protected boolean sirenOn; // Trạng thái còi ưu tiên
 
-    public EmergencyVehicle(double x, double y, double angle, DriverBehavior behavior) {
+    public EmergencyVehicle(Position position, Direction direction, DriverBehavior behavior) {
         // Gọi constructor của lớp cha (Vehicle)
-        super(x, y, angle, behavior);
+        super(position, direction, behavior);
         
         // Mặc định cho xe ưu tiên
         this.setEmergency(true);

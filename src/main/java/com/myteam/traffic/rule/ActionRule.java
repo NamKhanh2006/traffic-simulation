@@ -46,4 +46,11 @@ public class ActionRule implements TrafficRule {
     public int getPriority() {
     	return 20;
     }
+    
+    @Override
+    public boolean appliesTo(Vehicle v) {
+    	if (affectedVehicles != null && affectedVehicles.contains(v.getType()))
+    		return false;
+    	return true;
+    }
 }

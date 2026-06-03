@@ -1,12 +1,14 @@
 package com.myteam.traffic.vehicle.emergency;
 
 import com.myteam.traffic.behavior.DriverBehavior;
+import com.myteam.traffic.model.geometry.Direction;
+import com.myteam.traffic.model.geometry.Position;
 import com.myteam.traffic.vehicle.VehicleType;
 
 public class Ambulance extends EmergencyVehicle {
 
-    public Ambulance(double x, double y, double angle, DriverBehavior behavior) {
-        super(x, y, angle, behavior);
+    public Ambulance(Position position, Direction direction, DriverBehavior behavior) {
+        super(position, direction, behavior);
         
         this.setWidth(4.5);
         this.setHeight(2.2);
