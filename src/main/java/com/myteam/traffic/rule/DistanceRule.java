@@ -12,7 +12,13 @@ public class DistanceRule implements TrafficRule {
     private double minDistance;
     private HashSet<VehicleType> affectedVehicles;  // null = ALL VEHICLES AFFECTED
     
-    @Override
+    public DistanceRule(double minDistance, HashSet<VehicleType> affectedVehicles) {
+		super();
+		this.minDistance = minDistance;
+		this.affectedVehicles = affectedVehicles;
+	}
+
+	@Override
     public boolean isAllowed(Vehicle v, Action a, RoadContext c) {
     	if (affectedVehicles != null && !affectedVehicles.contains(v.getType()))
         	return true;
