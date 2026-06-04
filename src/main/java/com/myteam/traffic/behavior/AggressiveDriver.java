@@ -1,10 +1,10 @@
 package traffic.behavior;
 
-import traffic.common.Action;
-import traffic.model.context.RoadContext;
-import traffic.model.vehicle.Vehicle;
-
 import java.util.Random;
+
+import com.myteam.traffic.behavior.common.Action;
+import com.myteam.traffic.context.RoadContext;
+import com.myteam.traffic.vehicle.Vehicle;
 
 /**
  * An impatient, speed-focused driver who frequently overtakes and honks.
