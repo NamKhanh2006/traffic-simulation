@@ -2,12 +2,16 @@ package com.myteam.traffic.context;
 
 import com.myteam.traffic.model.infrastructure.Lane;
 import com.myteam.traffic.model.infrastructure.RoadSegment;
+import com.myteam.traffic.model.infrastructure.HighwaySegment;
 import com.myteam.traffic.behavior.common.Action;
+import com.myteam.traffic.rule.ActionRule;
+import com.myteam.traffic.rule.TrafficRule;
 import com.myteam.traffic.light.TrafficLightState;
 import com.myteam.traffic.marking.RoadMarking;
 import com.myteam.traffic.model.geometry.Position;
 import com.myteam.traffic.model.geometry.Direction;
 import com.myteam.traffic.vehicle.Vehicle;
+import com.myteam.traffic.vehicle.VehicleType;
 
 import java.util.*;
 
@@ -70,6 +74,12 @@ public class RoadContext {
      */
     private final Map<Vehicle, Position> positionSnapshot;
 
+    /**
+     * Luật gắn với ngữ cảnh hiện tại (làn / đoạn đường), không phải global.
+     * Được tính một lần khi build — immutable.
+     */
+    private final List<TrafficRule> localRules;
+
     // =========================================================
     // Constructor — private, chỉ được tạo qua Builder
     // =========================================================
@@ -82,6 +92,7 @@ public class RoadContext {
         this.currentSegment   = builder.currentSegment;
         this.nearbyVehicles   = Collections.unmodifiableList(new ArrayList<>(builder.nearbyVehicles));
         this.positionSnapshot = Collections.unmodifiableMap(new HashMap<>(builder.positionSnapshot));
+        this.localRules       = buildLocalRules(builder);
     }
 
     // =========================================================
@@ -94,6 +105,17 @@ public class RoadContext {
     public Lane             getCurrentLane()      { return currentLane;      }
     public RoadSegment      getCurrentSegment()   { return currentSegment;   }
     public List<Vehicle>    getNearbyVehicles()   { return nearbyVehicles;   }
+
+    /**
+     * Luật áp dụng theo làn / đoạn đường hiện tại của subject.
+     * {@link com.myteam.traffic.controller.TrafficController} gộp với global rules
+     * trước khi gọi {@code isAllowed}.
+     *
+     * @return danh sách không null, không sửa được
+     */
+    public List<TrafficRule> getLocalRules() {
+        return localRules;
+    }
 
     /**
      * Lấy vị trí snapshot của một xe bất kỳ.
@@ -223,7 +245,7 @@ public class RoadContext {
      * @param action Hành động muốn thực hiện
      * @return Khoảng cách tối thiểu đến xe phía trước sau khi thực hiện action
      */
-    public double DistanceAfterAction(Vehicle v, Action action) {
+    public double distanceAfterAction(Vehicle v, Action action) {
         Position currentPos = positionSnapshot.getOrDefault(v, v.getPosition());
         if (currentPos == null) return Double.MAX_VALUE;
 
@@ -339,6 +361,86 @@ public class RoadContext {
     }
 
     // =========================================================
+    // Local rules — suy ra từ làn / đoạn đường
+    // =========================================================
+
+    private static List<TrafficRule> buildLocalRules(Builder builder) {
+        List<TrafficRule> rules = new ArrayList<>(builder.explicitLocalRules);
+
+        Lane lane = builder.currentLane;
+        if (lane != null) {
+            ActionRule movementRule = movementRuleForLane(lane);
+            if (movementRule != null) {
+                rules.add(movementRule);
+            }
+        }
+
+        RoadSegment segment = builder.currentSegment;
+        if (segment instanceof HighwaySegment highway
+                && lane != null
+                && highway.hasEmergencyLane()
+                && highway.isEmergencyLane(lane.getIndex())) {
+            ActionRule emergencyLaneRule = emergencyLaneRule();
+            if (emergencyLaneRule != null) {
+                rules.add(emergencyLaneRule);
+            }
+        }
+
+        return Collections.unmodifiableList(rules);
+    }
+
+    /**
+     * Cấm các {@link Action} không khớp {@link Lane.Movement} được phép trên làn.
+     * Vạch kẻ / đổi làn vẫ do {@link com.myteam.traffic.rule.MarkingRule} (global).
+     */
+    private static ActionRule movementRuleForLane(Lane lane) {
+        Set<Lane.Movement> allowed = lane.getAllowedMovements();
+        if (allowed.isEmpty()) {
+            return null;
+        }
+
+        HashSet<Action> banned = new HashSet<>();
+        if (!allowed.contains(Lane.Movement.U_TURN)) {
+            banned.add(Action.U_TURN);
+        }
+        if (!allowed.contains(Lane.Movement.LEFT)) {
+            banned.add(Action.TURN_LEFT);
+        }
+        if (!allowed.contains(Lane.Movement.RIGHT)) {
+            banned.add(Action.TURN_RIGHT);
+        }
+        if (!allowed.contains(Lane.Movement.STRAIGHT)) {
+            banned.add(Action.MOVE_FORWARD);
+            banned.add(Action.ACCELERATE);
+            banned.add(Action.OVERTAKE);
+        }
+
+        if (banned.isEmpty()) {
+            return null;
+        }
+        return new ActionRule(null, banned, null);
+    }
+
+    /** Làn dừng khẩn cấp: xe thường không được lưu thông; xe EMERGENCY vẫn được. */
+    private static ActionRule emergencyLaneRule() {
+        HashSet<Action> banned = new HashSet<>(EnumSet.of(
+                Action.MOVE_FORWARD,
+                Action.ACCELERATE,
+                Action.OVERTAKE,
+                Action.CHANGE_LANE,
+                Action.TURN_LEFT,
+                Action.TURN_RIGHT,
+                Action.U_TURN
+        ));
+        HashSet<VehicleType> nonEmergency = new HashSet<>(EnumSet.of(
+                VehicleType.CAR,
+                VehicleType.MOTORBIKE,
+                VehicleType.BICYCLE
+        ));
+        return new ActionRule(null, banned, nonEmergency);
+    }
+
+    // =========================================================
     // Builder
     // =========================================================
 
@@ -369,6 +471,7 @@ public class RoadContext {
         private RoadSegment            currentSegment   = null;
         private List<Vehicle>          nearbyVehicles   = new ArrayList<>();
         private Map<Vehicle, Position> positionSnapshot = new HashMap<>();
+        private List<TrafficRule>      explicitLocalRules = new ArrayList<>();
 
         /** Xe mà context này mô tả môi trường xung quanh. BẮT BUỘC phải set. */
         public Builder subject(Vehicle v) {
@@ -403,6 +506,24 @@ public class RoadContext {
 
         public Builder positionSnapshot(Map<Vehicle, Position> snapshot) {
             this.positionSnapshot = snapshot != null ? snapshot : new HashMap<>();
+            return this;
+        }
+
+        /**
+         * Thêm luật cục bộ tùy chỉnh (vd. rule gắn sẵn trên {@link RoadSegment} sau này).
+         * Các rule suy ra từ {@code currentLane} / cao tốc vẫn được gộp thêm khi {@code build()}.
+         */
+        public Builder localRules(List<TrafficRule> rules) {
+            this.explicitLocalRules = rules != null
+                    ? new ArrayList<>(rules)
+                    : new ArrayList<>();
+            return this;
+        }
+
+        public Builder addLocalRule(TrafficRule rule) {
+            if (rule != null) {
+                this.explicitLocalRules.add(rule);
+            }
             return this;
         }
 

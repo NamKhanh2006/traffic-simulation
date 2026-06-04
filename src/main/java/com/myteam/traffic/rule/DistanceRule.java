@@ -20,9 +20,7 @@ public class DistanceRule implements TrafficRule {
 
 	@Override
     public boolean isAllowed(Vehicle v, Action a, RoadContext c) {
-    	if (affectedVehicles != null && !affectedVehicles.contains(v.getType()))
-        	return true;
-        return c.DistanceAfterAction(v, a) >= minDistance;
+        return c.distanceAfterAction(v, a) >= minDistance;
     }
     
     @Override
@@ -32,6 +30,10 @@ public class DistanceRule implements TrafficRule {
     
     @Override
     public boolean appliesTo(Vehicle v) {
-    	return true; // Any vehicle must keep a distance with the vehicle in front of it
+    	if (affectedVehicles == null)
+    		return true;
+    	if (affectedVehicles != null && affectedVehicles.contains(v.getType()))
+    		return true;
+    	return false;
     }
 }

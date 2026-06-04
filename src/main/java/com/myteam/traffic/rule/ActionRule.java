@@ -10,6 +10,7 @@ public class ActionRule implements TrafficRule {
     private HashSet<Action> allowed;     
     private HashSet<Action> banned;      
     private HashSet<VehicleType> affectedVehicles; // Vehicles affected by the rule - Các loại xe bị luật này áp dụng
+    // null = ALL VEHICLES AFFECTED
 
     // Constructor to generate different rules for different lanes
     // Constructor để tạo các luật khác nhau cho các làn khác nhau
@@ -49,8 +50,9 @@ public class ActionRule implements TrafficRule {
     
     @Override
     public boolean appliesTo(Vehicle v) {
-    	if (affectedVehicles != null && affectedVehicles.contains(v.getType()))
-    		return false;
-    	return true;
+        if (affectedVehicles == null) {
+            return true;
+        }
+        return affectedVehicles.contains(v.getType());
     }
 }
