@@ -1,8 +1,8 @@
-package traffic.behavior;
+package com.myteam.traffic.behavior;
 
-import traffic.common.Action;
-import traffic.model.context.RoadContext;
-import traffic.model.vehicle.Vehicle;
+import com.myteam.traffic.behavior.common.Action;
+import com.myteam.traffic.context.RoadContext;
+import com.myteam.traffic.vehicle.Vehicle;
 
 /**
  * Driver behaviour for emergency vehicles (ambulance, fire truck, police).

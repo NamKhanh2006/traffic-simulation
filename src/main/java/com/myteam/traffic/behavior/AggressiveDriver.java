@@ -1,4 +1,4 @@
-package traffic.behavior;
+package com.myteam.traffic.behavior;
 
 import java.util.Random;
 
