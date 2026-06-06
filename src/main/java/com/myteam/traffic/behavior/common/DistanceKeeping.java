@@ -14,10 +14,10 @@ public class DistanceKeeping {
     public static final double MIN_TTC = 1.0;       // Dưới ngưỡng này phải can thiệp
 
     // IDM parameters
-    private static final double DEFAULT_MAX_ACCEL = 2.0;
-    private static final double DEFAULT_COMFORT_DECEL = 3.0;
-    private static final double MIN_GAP = 2.0;
-    private static final double DESIRED_TIME_HEADWAY = 1.5;
+    private static final double DEFAULT_MAX_ACCEL = 2.0;      // m/s²
+    private static final double DEFAULT_COMFORT_DECEL = 3.0;  // m/s²
+    private static final double MIN_GAP = 2.0;                // m
+    private static final double DESIRED_TIME_HEADWAY = 1.5;   // s
     
     /**
      * Tính Time-to-Collision với xe phía trước.
