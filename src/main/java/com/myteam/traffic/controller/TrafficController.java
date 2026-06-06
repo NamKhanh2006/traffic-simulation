@@ -82,6 +82,12 @@ public class TrafficController {
     // Đăng ký thực thể — API công khai
     // ═══════════════════════════════════════════════════════════
 
+    public void spawnVehicle(RoadSegment entry, Lane lane, DriverBehavior behavior) {
+        Vehicle v = new Car(...);   // hoặc loại xe khác
+        v.placeOnSegment(entry, lane, 0.0);
+        addVehicle(v);
+    }
+
     public void addVehicle(Vehicle v) {
         if (v != null) vehicles.add(v);
     }
@@ -110,17 +116,23 @@ public class TrafficController {
     // ═══════════════════════════════════════════════════════════
 
     public void tick() {
-        // Bước 1: Cập nhật tất cả đèn giao thông trước
+        // Bước 1: Loại bỏ xe đã đi hết đường
+        vehicles.removeIf(v ->
+            v.getCurrentSegment() != null && v.getSegmentProgress() >= 1.0
+            && findUpcomingIntersection(v, v.getPosition()) == null
+        );
+
+        // Bước 2: Cập nhật tất cả đèn giao thông trước
         // (đèn phải đổi trạng thái trước khi xe ra quyết định)
         for (TrafficLight light : lights) {
             light.tick();
         }
 
-        // Bước 2: Chụp ảnh vị trí tất cả xe TẠI ĐẦU TICK
+        // Bước 3: Chụp ảnh vị trí tất cả xe TẠI ĐẦU TICK
         // Phải làm trước vòng lặp xe — xem giải thích trong takePositionSnapshot()
         Map<Vehicle, Position> snapshot = takePositionSnapshot();
 
-        // Bước 3: Xử lý từng xe
+        // Bước 4: Xử lý từng xe
         for (Vehicle v : vehicles) {
             RoadContext ctx = buildContext(v, snapshot);
             processVehicle(v, ctx);

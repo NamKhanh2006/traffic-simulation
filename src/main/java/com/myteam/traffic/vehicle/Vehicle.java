@@ -7,6 +7,7 @@ import com.myteam.traffic.model.infrastructure.Lane;
 import com.myteam.traffic.model.infrastructure.RoadSegment;
 import com.myteam.traffic.model.infrastructure.intersection.Intersection;
 import com.myteam.traffic.navigation.IntersectionPath;
+import java.util.List;
 
 public abstract class Vehicle {
     protected Position position;
@@ -141,7 +142,11 @@ public abstract class Vehicle {
     // ── Tốc độ ────────────────────────────────────────────────
 
     public void accelerate() {
-        speed = Math.min(maxSpeed, speed + 1);
+        //speed = Math.min(maxSpeed, speed + 1);
+        double limit = (currentSegment != null)
+            ? currentSegment.getSpeedLimit()   // cần thêm getter này
+            : maxSpeed;
+        speed = Math.min(Math.min(maxSpeed, limit), speed + 1);
     }
 
     public void slowDown() {
@@ -154,7 +159,24 @@ public abstract class Vehicle {
 
     /** Stub — đổi làn trên segment sẽ bổ sung sau. */
     public void changeLane() {
-        System.out.printf("[%s] changeLane (stub)%n", type);
+        //System.out.printf("[%s] changeLane (stub)%n", type);
+        if (currentSegment == null) return;
+
+        List<Lane> lanes = currentSegment.getLanes();
+        int currentIndex = currentLane.getIndex();
+
+        // Tìm làn kề — ưu tiên làn bên phải, fallback sang trái
+        Lane targetLane = lanes.stream()
+            .filter(l -> l.getIndex() == currentIndex + 1
+                      || l.getIndex() == currentIndex - 1)
+            .filter(l -> l.getDirection() == currentLane.getDirection())
+            .findFirst()
+            .orElse(null);
+
+        if (targetLane != null) {
+            currentLane = targetLane;
+            syncPoseFromSegment(); // cập nhật position theo làn mới
+        }
     }
 
     public void uTurn() {
