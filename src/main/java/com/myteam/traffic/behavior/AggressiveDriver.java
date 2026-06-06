@@ -35,6 +35,14 @@ public class AggressiveDriver implements DriverBehavior {
             return Action.ACCELERATE;
         }
 
+        if (context.mustYieldToIntersectionTraffic()) {
+            return Action.STOP;
+        }
+
+        if (context.isTooCloseToFront()) {
+            return Action.SLOW_DOWN;
+        }
+
         // 2. Don't stay behind slower vehicles
         if (context.hasFrontVehicle()) {
             return Action.OVERTAKE;

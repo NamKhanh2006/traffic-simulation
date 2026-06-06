@@ -1,39 +1,36 @@
 package com.myteam.traffic.rule;
 
 import java.util.HashSet;
-import com.myteam.traffic.*;
-import com.myteam.traffic.vehicle.*;
-import com.myteam.traffic.context.*;
-import com.myteam.traffic.behavior.*;
-import com.myteam.traffic.behavior.common.*;
-import com.myteam.traffic.vehicle.emergency.*;
+
+import com.myteam.traffic.behavior.common.Action;
+import com.myteam.traffic.context.RoadContext;
+import com.myteam.traffic.vehicle.Vehicle;
+import com.myteam.traffic.vehicle.VehicleType;
 
 public class DistanceRule implements TrafficRule {
     private double minDistance;
-    private HashSet<VehicleType> affectedVehicles;  // null = ALL VEHICLES AFFECTED
-    
-    public DistanceRule(double minDistance, HashSet<VehicleType> affectedVehicles) {
-		super();
-		this.minDistance = minDistance;
-		this.affectedVehicles = affectedVehicles;
-	}
+    private HashSet<VehicleType> affectedVehicles;
 
-	@Override
+    public DistanceRule(double minDistance, HashSet<VehicleType> affectedVehicles) {
+        this.minDistance = minDistance;
+        this.affectedVehicles = affectedVehicles;
+    }
+
+    @Override
     public boolean isAllowed(Vehicle v, Action a, RoadContext c) {
         return c.distanceAfterAction(v, a) >= minDistance;
     }
-    
+
     @Override
     public int getPriority() {
-    	return 50;
+        return 50;
     }
-    
+
     @Override
     public boolean appliesTo(Vehicle v) {
-    	if (affectedVehicles == null)
-    		return true;
-    	if (affectedVehicles != null && affectedVehicles.contains(v.getType()))
-    		return true;
-    	return false;
+        if (affectedVehicles == null) {
+            return true;
+        }
+        return affectedVehicles.contains(v.getType());
     }
 }

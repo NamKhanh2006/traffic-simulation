@@ -9,7 +9,12 @@ import com.myteam.traffic.model.infrastructure.Lane;
 import com.myteam.traffic.model.infrastructure.RoadNetwork;
 import com.myteam.traffic.model.infrastructure.RoadSegment;
 import com.myteam.traffic.model.infrastructure.intersection.Intersection;
+import com.myteam.traffic.navigation.IntersectionNavigator;
+import com.myteam.traffic.navigation.IntersectionPath;
+import com.myteam.traffic.navigation.PathFollower;
 import com.myteam.traffic.rule.TrafficRule;
+import com.myteam.traffic.vehicle.PlannedExit;
+import com.myteam.traffic.vehicle.TravelMode;
 import com.myteam.traffic.vehicle.Vehicle;
 
 import java.util.*;
@@ -59,6 +64,10 @@ public class TrafficController {
     // ── Rules — tái sử dụng từ code của teammate ─────────────────
     private final List<TrafficRule>  globalRules = new ArrayList<>();
 
+    // ── Điều hướng giao lộ ───────────────────────────────────────
+    private final IntersectionNavigator intersectionNavigator;
+    private final PathFollower          pathFollower = new PathFollower();
+
     // ═══════════════════════════════════════════════════════════
     // Constructor
     // ═══════════════════════════════════════════════════════════
@@ -66,13 +75,26 @@ public class TrafficController {
     public TrafficController(RoadNetwork network) {
         if (network == null) throw new IllegalArgumentException("Network không được null");
         this.network = network;
+        this.intersectionNavigator = new IntersectionNavigator(network);
     }
 
     // ═══════════════════════════════════════════════════════════
     // Đăng ký thực thể — API công khai
     // ═══════════════════════════════════════════════════════════
 
-    public void addVehicle(Vehicle v)     { if (v  != null) vehicles.add(v);    }
+    public void addVehicle(Vehicle v) {
+        if (v != null) vehicles.add(v);
+    }
+
+    /**
+     * Đăng ký xe và đặt lên segment/lane ban đầu.
+     */
+    public void addVehicle(Vehicle v, RoadSegment segment, Lane lane, double t) {
+        if (v == null) return;
+        v.placeOnSegment(segment, lane, t);
+        vehicles.add(v);
+    }
+
     public void addLight(TrafficLight tl) { if (tl != null) lights.add(tl);     }
 
     // Ba method dưới đây tái sử dụng nguyên từ code của teammate
@@ -183,9 +205,11 @@ public class TrafficController {
         Position    subjectPos     = snapshot.getOrDefault(subject, subject.getPosition());
         RoadSegment subjectSegment = subject.getCurrentSegment();
 
-        // Tính toán một lần, dùng cho tất cả xe trong vòng lặp bên dưới
         Intersection upcoming = findUpcomingIntersection(subject, subjectPos);
-        Intersection current  = findCurrentIntersection(subjectPos);
+        Intersection current  = subject.getCurrentIntersection();
+        if (current == null) {
+            current = findCurrentIntersection(subjectPos);
+        }
 
         List<Vehicle> nearby = new ArrayList<>();
 
@@ -297,18 +321,59 @@ public class TrafficController {
      * Nếu bị từ chối, behavior tự chọn fallback và thử lại một lần.
      */
     private void processVehicle(Vehicle v, RoadContext ctx) {
-        // Behavior đề xuất
         Action proposed = v.getBehavior().decideAction(v, ctx);
 
         if (isVehicleAllowed(v, proposed, ctx)) {
             executeAction(v, proposed);
         } else {
-            // Behavior tự chọn action an toàn hơn
             Action fallback = v.getBehavior().handleRejection(v, ctx, proposed);
-            // Fallback không cần kiểm tra lại — handleRejection() phải
-            // luôn trả về action hợp lệ (STOP, SLOW_DOWN...)
             executeAction(v, fallback);
         }
+
+        tryEnterIntersection(v);
+        tryExitIntersection(v);
+    }
+
+    /**
+     * Khi xe đến cuối segment và đã có {@link PlannedExit}, tạo quỹ đạo cung.
+     */
+    private void tryEnterIntersection(Vehicle v) {
+        if (v.getTravelMode() != TravelMode.ON_SEGMENT) {
+            return;
+        }
+        if (v.getPlannedExit() == PlannedExit.NONE) {
+            return;
+        }
+        if (v.getSegmentProgress() < 1.0) {
+            return;
+        }
+
+        Intersection upcoming = intersectionNavigator.peekUpcomingIntersection(v);
+        if (upcoming != null && !intersectionNavigator.canMerge(v, upcoming, vehicles)) {
+            return;
+        }
+
+        IntersectionPath path = intersectionNavigator.buildPath(v);
+        if (path == null) {
+            System.out.printf("[CONTROLLER] Không tạo được path cho %s (exit=%s)%n",
+                    v.getType(), v.getPlannedExit());
+            v.clearPlannedExit();
+            return;
+        }
+
+        v.enterIntersectionPath(path, path.getIntersection());
+        v.clearPlannedExit();
+    }
+
+    /** Khi hoàn thành quỹ đạo cung, gán segment/lane nhánh ra. */
+    private void tryExitIntersection(Vehicle v) {
+        if (v.getTravelMode() != TravelMode.ON_INTERSECTION_PATH) {
+            return;
+        }
+        if (!v.isIntersectionPathComplete()) {
+            return;
+        }
+        intersectionNavigator.applyExit(v);
     }
 
     /**
@@ -352,22 +417,42 @@ public class TrafficController {
     }
 
     /**
-     * Thực thi action lên xe.
-     * Gọi các method tương ứng của Vehicle.
+     * Thực thi action theo {@link TravelMode}.
+     * Rẽ tại giao lộ qua {@link PlannedExit}, không qua {@code turnLeft}/{@code turnRight}.
      */
     private void executeAction(Vehicle v, Action action) {
+        if (v.getTravelMode() == TravelMode.ON_INTERSECTION_PATH) {
+            executeOnIntersectionPath(v, action);
+        } else {
+            executeOnSegment(v, action);
+        }
+    }
+
+    private void executeOnSegment(Vehicle v, Action action) {
         switch (action) {
-            case MOVE_FORWARD  -> v.moveForward();
+            case MOVE_FORWARD  -> v.advanceOnSegment();
             case ACCELERATE    -> v.accelerate();
             case SLOW_DOWN     -> v.slowDown();
             case STOP          -> v.stop();
             case CHANGE_LANE   -> v.changeLane();
             case OVERTAKE      -> { v.accelerate(); v.changeLane(); }
-            case TURN_LEFT     -> v.turnLeft();
-            case TURN_RIGHT    -> v.turnRight();
-            case U_TURN        -> v.uTurn();
+            case TURN_LEFT     -> v.setPlannedExit(PlannedExit.LEFT);
+            case TURN_RIGHT    -> v.setPlannedExit(PlannedExit.RIGHT);
+            case U_TURN        -> v.setPlannedExit(PlannedExit.LEFT);
+            // RANDOM: driver gán PlannedExit.RANDOM trực tiếp qua setPlannedExit
             case HONK          -> v.honk();
-            default            -> v.moveForward();
+            default            -> v.advanceOnSegment();
+        }
+    }
+
+    private void executeOnIntersectionPath(Vehicle v, Action action) {
+        switch (action) {
+            case MOVE_FORWARD  -> pathFollower.advance(v);
+            case ACCELERATE    -> v.accelerate();
+            case SLOW_DOWN     -> v.slowDown();
+            case STOP          -> v.stop();
+            case HONK          -> v.honk();
+            default            -> pathFollower.advance(v);
         }
     }
 

@@ -1,16 +1,13 @@
 package com.myteam.traffic.rule;
 
-import com.myteam.traffic.*;
-import com.myteam.traffic.behavior.*;
-import com.myteam.traffic.behavior.common.*;
-import com.myteam.traffic.context.*;
-import com.myteam.traffic.vehicle.*;
-import com.myteam.traffic.vehicle.emergency.*;
+import com.myteam.traffic.behavior.common.Action;
+import com.myteam.traffic.context.RoadContext;
+import com.myteam.traffic.vehicle.Vehicle;
 
 public interface TrafficRule {
-	boolean isAllowed(Vehicle v, Action a, RoadContext c);
+    boolean isAllowed(Vehicle v, Action a, RoadContext c);
 
-	int getPriority();
-	
-	boolean appliesTo(Vehicle v);
+    int getPriority();
+
+    boolean appliesTo(Vehicle v);
 }

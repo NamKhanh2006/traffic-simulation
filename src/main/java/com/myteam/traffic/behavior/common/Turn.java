@@ -1,5 +1,6 @@
 package com.myteam.traffic.behavior.common;
 
+import com.myteam.traffic.vehicle.PlannedExit;
 import com.myteam.traffic.vehicle.Vehicle;
 
 /**
@@ -25,7 +26,10 @@ public class Turn {
      * @param direction LEFT or RIGHT
      */
     public static void turn(Vehicle v, Direction direction) {
-        System.out.println(v.getType() + " turning " + direction.name().toLowerCase());
-        v.turn(direction);
+        PlannedExit exit = (direction == Direction.LEFT)
+                ? PlannedExit.LEFT
+                : PlannedExit.RIGHT;
+        v.setPlannedExit(exit);
+        System.out.println(v.getType() + " planned exit: " + exit);
     }
 }

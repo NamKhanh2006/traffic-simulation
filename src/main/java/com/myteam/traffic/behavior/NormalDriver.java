@@ -23,22 +23,27 @@ public class NormalDriver implements DriverBehavior {
     @Override
     public Action decideAction(Vehicle v, RoadContext context) {
 
-        // 1. Obey red light
+        // 1. Obey red light (không liên quan vòng xuyến — đèn và nhập vòng độc lập)
         if (context.hasRedLightAhead()) {
             return Action.STOP;
         }
 
-        // 2. Keep a safe following distance
+        // 2. Nhường xe đã trên cung khi sắp merge
+        if (context.mustYieldToIntersectionTraffic()) {
+            return Action.STOP;
+        }
+
+        // 3. Giữ khoảng cách (segment hoặc quỹ đạo giao lộ)
         if (context.isTooCloseToFront()) {
             return Action.SLOW_DOWN;
         }
 
-        // 3. Yield to emergency vehicles
+        // 4. Yield to emergency vehicles
         if (context.hasEmergencyNearby()) {
             return Action.CHANGE_LANE;
         }
 
-        // 4. All clear – move forward
+        // 5. All clear – move forward
         return Action.MOVE_FORWARD;
     }
 

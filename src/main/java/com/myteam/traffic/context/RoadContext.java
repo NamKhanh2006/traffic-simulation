@@ -10,6 +10,9 @@ import com.myteam.traffic.light.TrafficLightState;
 import com.myteam.traffic.marking.RoadMarking;
 import com.myteam.traffic.model.geometry.Position;
 import com.myteam.traffic.model.geometry.Direction;
+import com.myteam.traffic.navigation.IntersectionPath;
+import com.myteam.traffic.vehicle.PlannedExit;
+import com.myteam.traffic.vehicle.TravelMode;
 import com.myteam.traffic.vehicle.Vehicle;
 import com.myteam.traffic.vehicle.VehicleType;
 
@@ -174,21 +177,84 @@ public class RoadContext {
      *   if (ctx.isTooCloseToFront()) return Action.SLOW_DOWN;
      */
     public boolean isTooCloseToFront() {
+        if (subject.getTravelMode() == TravelMode.ON_INTERSECTION_PATH) {
+            return isTooCloseOnIntersectionPath();
+        }
+
         Position myPos = getSubjectPosition();
 
         double minDist = nearbyVehicles.stream()
                 .filter(other -> other != subject)
                 .filter(other -> isAheadOfSubject(other))
                 .mapToDouble(other -> {
-                    // Lấy vị trí xe kia từ snapshot, fallback về getPosition()
                     Position otherPos = positionSnapshot.getOrDefault(
                             other, other.getPosition());
                     return myPos.distanceTo(otherPos);
                 })
                 .min()
-                .orElse(Double.MAX_VALUE); // Không có xe phía trước → cực kỳ xa
+                .orElse(Double.MAX_VALUE);
 
         return minDist < SAFE_DISTANCE;
+    }
+
+    /**
+     * Trên quỹ đạo giao lộ: xe cùng intersection phía trước theo chiều cung và quá gần.
+     */
+    public boolean isTooCloseOnIntersectionPath() {
+        if (subject.getTravelMode() != TravelMode.ON_INTERSECTION_PATH) {
+            return false;
+        }
+
+        IntersectionPath path = subject.getActivePath();
+        if (path == null || subject.getCurrentIntersection() == null) {
+            return false;
+        }
+
+        Position myPos = getSubjectPosition();
+        double myAngle = angleAroundCenter(myPos, path.getCenterX(), path.getCenterY());
+        double sweep = path.getSweepRad();
+
+        double minDist = nearbyVehicles.stream()
+                .filter(other -> other != subject)
+                .filter(other -> other.getCurrentIntersection() == subject.getCurrentIntersection())
+                .filter(other -> {
+                    Position otherPos = positionSnapshot.getOrDefault(
+                            other, other.getPosition());
+                    double otherAngle = angleAroundCenter(otherPos,
+                            path.getCenterX(), path.getCenterY());
+                    return isAheadOnArc(myAngle, otherAngle, sweep);
+                })
+                .mapToDouble(other -> {
+                    Position otherPos = positionSnapshot.getOrDefault(
+                            other, other.getPosition());
+                    return myPos.distanceTo(otherPos);
+                })
+                .min()
+                .orElse(Double.MAX_VALUE);
+
+        return minDist < SAFE_DISTANCE;
+    }
+
+    /**
+     * Xe trên segment sắp vào giao lộ phải nhường xe đã ở trên cung (ưu tiên vòng xuyến).
+     */
+    public boolean mustYieldToIntersectionTraffic() {
+        if (subject.getTravelMode() != TravelMode.ON_SEGMENT) {
+            return false;
+        }
+        if (subject.getPlannedExit() == PlannedExit.NONE) {
+            return false;
+        }
+
+        Position myPos = getSubjectPosition();
+        return nearbyVehicles.stream()
+                .filter(other -> other != subject)
+                .filter(other -> other.getTravelMode() == TravelMode.ON_INTERSECTION_PATH)
+                .anyMatch(other -> {
+                    Position otherPos = positionSnapshot.getOrDefault(
+                            other, other.getPosition());
+                    return myPos.distanceTo(otherPos) < SAFE_DISTANCE;
+                });
     }
 
     /**
@@ -246,17 +312,19 @@ public class RoadContext {
      * @return Khoảng cách tối thiểu đến xe phía trước sau khi thực hiện action
      */
     public double distanceAfterAction(Vehicle v, Action action) {
+        if (v.getTravelMode() == TravelMode.ON_INTERSECTION_PATH && v.getActivePath() != null) {
+            return distanceAfterActionOnPath(v, action);
+        }
+
         Position currentPos = positionSnapshot.getOrDefault(v, v.getPosition());
-        if (currentPos == null) return Double.MAX_VALUE;
+        if (currentPos == null) {
+            return Double.MAX_VALUE;
+        }
 
-        // Ước tính khoảng di chuyển dựa vào action
         double displacement = estimateDisplacement(v, action);
-
-        // Vị trí dự kiến của v sau khi thực hiện action
         Direction dir = v.getDirection();
         Position projected = currentPos.project(dir, displacement);
 
-        // Tìm xe gần nhất phía trước v, tính từ vị trí dự kiến
         return nearbyVehicles.stream()
                 .filter(other -> other != v)
                 .filter(other -> isAheadOf(v, other))
@@ -264,6 +332,37 @@ public class RoadContext {
                     Position otherPos = positionSnapshot.getOrDefault(
                             other, other.getPosition());
                     return projected.distanceTo(otherPos);
+                })
+                .min()
+                .orElse(Double.MAX_VALUE);
+    }
+
+    private double distanceAfterActionOnPath(Vehicle v, Action action) {
+        IntersectionPath path = v.getActivePath();
+        if (path == null) {
+            return Double.MAX_VALUE;
+        }
+
+        double projectedS = v.getPathProgress() + estimateDisplacement(v, action);
+        double[] projected = path.sampleAt(projectedS);
+        Position projectedPos = new Position(projected[0], projected[1]);
+        double myAngle = angleAroundCenter(projectedPos, path.getCenterX(), path.getCenterY());
+        double sweep = path.getSweepRad();
+
+        return nearbyVehicles.stream()
+                .filter(other -> other != v)
+                .filter(other -> other.getCurrentIntersection() == v.getCurrentIntersection())
+                .filter(other -> {
+                    Position otherPos = positionSnapshot.getOrDefault(
+                            other, other.getPosition());
+                    double otherAngle = angleAroundCenter(otherPos,
+                            path.getCenterX(), path.getCenterY());
+                    return isAheadOnArc(myAngle, otherAngle, sweep);
+                })
+                .mapToDouble(other -> {
+                    Position otherPos = positionSnapshot.getOrDefault(
+                            other, other.getPosition());
+                    return projectedPos.distanceTo(otherPos);
                 })
                 .min()
                 .orElse(Double.MAX_VALUE);
@@ -330,6 +429,30 @@ public class RoadContext {
         Position otherPos = positionSnapshot.getOrDefault(other, other.getPosition());
         Direction dir     = reference.getDirection();
         return refPos.isAheadInDirection(dir, otherPos);
+    }
+
+    private static double angleAroundCenter(Position pos, double cx, double cy) {
+        return Math.atan2(pos.getY() - cy, pos.getX() - cx);
+    }
+
+    /**
+     * {@code other} có nằm phía trước {@code myAngle} theo chiều quét {@code sweepRad} không.
+     */
+    private static boolean isAheadOnArc(double myAngle, double otherAngle, double sweepRad) {
+        double delta = otherAngle - myAngle;
+        while (delta <= -Math.PI) {
+            delta += 2 * Math.PI;
+        }
+        while (delta > Math.PI) {
+            delta -= 2 * Math.PI;
+        }
+        if (sweepRad > 0) {
+            return delta > 0 && delta < Math.PI;
+        }
+        if (sweepRad < 0) {
+            return delta < 0 && delta > -Math.PI;
+        }
+        return false;
     }
 
     // =========================================================
