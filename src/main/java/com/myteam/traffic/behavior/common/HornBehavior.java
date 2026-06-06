@@ -20,6 +20,5 @@ public class HornBehavior {
      */
     public static void honk(Vehicle v) {
         v.honk();
-        System.out.println(v.getType() + " honked!");
     }
 }
