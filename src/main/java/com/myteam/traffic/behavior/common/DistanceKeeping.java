@@ -66,12 +66,9 @@ public class DistanceKeeping {
         double ttc = timeToCollision(self, front);
         if (ttc < MIN_TTC) {
             self.slowDown();
-            System.out.printf("%s SLOW_DOWN (TTC=%.2fs)%n", self.getType(), ttc);
             return Action.SLOW_DOWN;
         }
         if (ttc < SAFE_TTC) {
-            System.out.printf("%s TTC below safe (%.2fs), prepare to brake%n", 
-                              self.getType(), ttc);
             self.slowDown(0.5);  // giảm tốc nhẹ
             return Action.SLOW_DOWN;
         }
