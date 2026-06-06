@@ -40,4 +40,13 @@ public interface DriverBehavior {
     default boolean isEmergency() {
         return false;
     }
+
+    /** Mức độ hung hăng (0 = an toàn, 1 = rất hung hăng) */
+    default double getAggressiveness() { return 0.0; }
+
+    /** Hệ số lịch sự khi đổi làn (MOBIL), càng cao càng quan tâm xe sau */
+    default double getPolitenessFactor() { return 0.5; }
+
+    /** Thời gian an toàn mong muốn (giây) – dùng trong IDM */
+    default double getDesiredTimeHeadway() { return 1.5; }
 }
