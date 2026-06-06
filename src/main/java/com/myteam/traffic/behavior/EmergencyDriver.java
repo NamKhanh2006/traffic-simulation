@@ -25,18 +25,21 @@ public class EmergencyDriver implements DriverBehavior {
 
     @Override
     public Action decideAction(Vehicle v, RoadContext context) {
-
-        // 1. Siren must be active before clearing the road
         if (!v.isSirenOn()) {
             return Action.HONK;
         }
-
-        // 2. Clear any vehicle blocking the path
-        if (context.hasFrontVehicle()) {
+        Vehicle front = context.getNearestFrontVehicle();
+        // Dừng khẩn cấp nếu va chạm sắp xảy ra
+        if (DistanceKeeping.isCollisionImminent(v, front)) {
+            return Action.STOP;
+        }
+        if (front != null) {
             return Action.OVERTAKE;
         }
-
-        // 3. Path is clear – proceed at full speed
+        // Tăng tốc đến tốc độ tối đa
+        if (v.getSpeed() < v.getMaxSpeed()) {
+            return Action.ACCELERATE;
+        }
         return Action.MOVE_FORWARD;
     }
 
