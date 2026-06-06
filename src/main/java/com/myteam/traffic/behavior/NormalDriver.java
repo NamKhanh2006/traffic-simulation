@@ -20,7 +20,24 @@ public class NormalDriver implements DriverBehavior {
 
     @Override
     public Action decideAction(Vehicle v, RoadContext context) {
-        return decisionTree.evaluate(v, context);
+        Vehicle front = context.getNearestFrontVehicle();
+        // 1. Dừng khẩn cấp nếu va chạm sắp xảy ra
+        if (DistanceKeeping.isCollisionImminent(v, front)) {
+            return Action.STOP;
+        }
+        // 2. Giảm tốc nếu TTC không an toàn
+        if (DistanceKeeping.timeToCollision(v, front) < DistanceKeeping.SAFE_TTC) {
+            return Action.SLOW_DOWN;
+        }
+        // 3. Tuân thủ đèn đỏ
+        if (context.hasRedLightAhead()) {
+            return Action.STOP;
+        }
+        // 4. Tăng tốc nếu an toàn
+        if (v.getSpeed() < v.getMaxSpeed() && !context.isTooCloseToFront()) {
+            return Action.ACCELERATE;
+        }
+        return Action.MOVE_FORWARD;
     }
 
     @Override
