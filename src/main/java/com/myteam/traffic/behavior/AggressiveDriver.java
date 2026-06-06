@@ -32,10 +32,21 @@ public class AggressiveDriver implements DriverBehavior {
 
     @Override
     public Action decideAction(Vehicle v, RoadContext context) {
-        // Ưu tiên đạt max speed
-        if (v.getSpeed() < v.getMaxSpeed()) return Action.ACCELERATE;
-
         Vehicle front = context.getNearestFrontVehicle();
+        // Ưu tiên đạt max speed
+        if (v.getSpeed() < v.getMaxSpeed() && 
+            !DistanceKeeping.isCollisionImminent(v, front)) {
+            return Action.ACCELERATE;
+        }
+        // Vượt nếu xe trước chậm và đủ an toàn
+        if (front != null && front.getSpeed() < v.getSpeed() - 5) {
+            return Action.OVERTAKE;
+        }
+
+        // Giảm tốc nếu TTC quá nhỏ
+        if (DistanceKeeping.timeToCollision(v, front) < DistanceKeeping.SAFE_TTC) {
+            return Action.SLOW_DOWN;
+        }
         if (front == null) return Action.MOVE_FORWARD;
 
         double gap = front.getX() - v.getX();
