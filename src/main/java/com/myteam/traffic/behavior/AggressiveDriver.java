@@ -1,67 +1,65 @@
-package traffic.behavior;
-
-import java.util.Random;
+// FuzzyAggressiveDriver.java
+package com.myteam.traffic.behavior;
 
 import com.myteam.traffic.behavior.common.Action;
 import com.myteam.traffic.context.RoadContext;
 import com.myteam.traffic.vehicle.Vehicle;
+import java.util.Random;
 
-/**
- * An impatient, speed-focused driver who frequently overtakes and honks.
- *
- * Decision priority (highest → lowest):
- *   1. Below max speed → ACCELERATE
- *   2. Vehicle ahead   → OVERTAKE
- *   3. Random chance   → HONK  (impulsive)
- *   4. Default         → MOVE_FORWARD
- *
- * Rejection fallback:
- *   - If OVERTAKE rejected (e.g. solid line marking) → HONK (frustrated)
- *     then SLOW_DOWN on the next tick
- *   - If ACCELERATE rejected (e.g. speed limit)      → MOVE_FORWARD
- *   - Any other rejection                            → SLOW_DOWN
- */
 public class AggressiveDriver implements DriverBehavior {
-
-    private static final double HONK_PROBABILITY = 0.15;
-
     private final Random random = new Random();
+
+    // Membership functions
+    private double veryClose(double gap) { 
+        return Math.max(0, Math.min(1, (3.0 - gap) / 3.0)); 
+    }
+    private double close(double gap) { 
+        return Math.max(0, Math.min(1, (gap - 1.0) / 4.0, (8.0 - gap) / 5.0)); 
+    }
+    private double far(double gap) { 
+        return Math.max(0, Math.min(1, (gap - 5.0) / 10.0)); 
+    }
+
+    private double muchSlower(double relSpeed) { 
+        return Math.max(0, Math.min(1, -relSpeed / 10.0)); 
+    }
+    private double equal(double relSpeed) { 
+        return Math.max(0, 1 - Math.abs(relSpeed) / 3.0); 
+    }
+    private double muchFaster(double relSpeed) { 
+        return Math.max(0, Math.min(1, relSpeed / 10.0)); 
+    }
 
     @Override
     public Action decideAction(Vehicle v, RoadContext context) {
+        // Ưu tiên đạt max speed
+        if (v.getSpeed() < v.getMaxSpeed()) return Action.ACCELERATE;
 
-        // 1. Always try to reach max speed
-        if (v.getSpeed() < v.getMaxSpeed()) {
-            return Action.ACCELERATE;
-        }
+        Vehicle front = context.getNearestFrontVehicle();
+        if (front == null) return Action.MOVE_FORWARD;
 
-        // 2. Don't stay behind slower vehicles
-        if (context.hasFrontVehicle()) {
-            return Action.OVERTAKE;
-        }
+        double gap = front.getX() - v.getX();
+        double relSpeed = v.getSpeed() - front.getSpeed();
 
-        // 3. Impulsive honk
-        if (random.nextDouble() < HONK_PROBABILITY) {
-            return Action.HONK;
-        }
+        // Fuzzy rules
+        double overtake = Math.min(close(gap), muchSlower(relSpeed));
+        double honk = Math.min(veryClose(gap), equal(relSpeed));
+        double slow = Math.min(veryClose(gap), muchFaster(relSpeed));
 
-        // 4. Cruising at max speed with no obstacle
+        // Defuzzification – chọn hành động có độ kích hoạt cao nhất
+        if (overtake >= honk && overtake >= slow && overtake > 0.3) return Action.OVERTAKE;
+        if (honk >= slow && honk > 0.4) return Action.HONK;
+        if (slow > 0.2) return Action.SLOW_DOWN;
+
         return Action.MOVE_FORWARD;
     }
 
     @Override
     public Action handleRejection(Vehicle v, RoadContext context, Action rejected) {
         switch (rejected) {
-            case OVERTAKE:
-                // Frustrated – honk, then next tick will slow down
-                return Action.HONK;
-            case ACCELERATE:
-                // Hit speed limit – just cruise
-                return Action.MOVE_FORWARD;
-            default:
-                return Action.SLOW_DOWN;
+            case OVERTAKE: return Action.HONK;
+            case ACCELERATE: return Action.MOVE_FORWARD;
+            default: return Action.SLOW_DOWN;
         }
     }
-
-    // isEmergency() returns false by default – no override needed
 }
