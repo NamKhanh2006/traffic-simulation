@@ -13,7 +13,7 @@ public class LaneChange {
     // MOBIL parameters
     private static final double INCENTIVE_THRESHOLD = 0.2;   // lợi ích tối thiểu (m/s²)
     private static final double POLITENESS_FACTOR = 0.5;     // quan tâm đến xe sau
-    private static final double MAX_BRAKING_NEW = 2.0;       // phanh tối đa cho phép (m/s²)
+    private static final double MAX_SAFE_BRAKING = 2.0;       // phanh tối đa cho phép (m/s²)
 
     /**
      * Kiểm tra an toàn theo MOBIL trước khi đổi làn.
@@ -33,9 +33,9 @@ public class LaneChange {
         double aRearNew = (rearNew != null) ? rearNew.getAcceleration() : 0;
 
         // Safety condition: xe sau trên làn mới không bị phanh quá mức
-        double brakingNew = aRearNew - (rearNew != null ? rearNew.getComfortableDecel() : -MAX_BRAKING_NEW);
+        double brakingNew = aRearNew - (rearNew != null ? rearNew.getDecelerationLimit() : -MAX_SAFE_BRAKING);        if (brakingNew > 0) return false;
         if (brakingNew > 0) return false;
-
+        
         // Incentive condition: lợi ích tổng thể > ngưỡng
         double deltaSelf = aSelfNew - aSelfOld;
         double deltaRearOld = aRearOld - (rearOld != null ? rearOld.getAccelerationAfterSelfLeaves() : 0);
@@ -44,15 +44,24 @@ public class LaneChange {
         return totalBenefit > INCENTIVE_THRESHOLD;
     }
 
+    private static double estimateAcceleration(Vehicle v, Vehicle leader) {
+        return DistanceKeeping.idmAcceleration(v, leader);
+    }
+
+    private static double estimateAccelerationOnLane(Vehicle self, RoadContext context, int targetLane) {
+        Vehicle frontOnTarget = context.getFrontVehicleOnLane(targetLane);
+        return DistanceKeeping.idmAcceleration(self, frontOnTarget);
+    }
     /**
      * Đổi làn chỉ khi an toàn theo MOBIL.
      */
     public static void changeLaneIfSafe(Vehicle v, RoadContext context, int targetLane) {
         if (isLaneChangeSafeMOBIL(v, context, targetLane)) {
-            System.out.println(v.getType() + " changing lane (MOBIL approved)");
             v.changeLane();
-        } else {
-            System.out.println(v.getType() + " lane change rejected by MOBIL");
         }
+    }
+
+    public static void changeLane(Vehicle v) {
+        v.changeLane();
     }
 }
