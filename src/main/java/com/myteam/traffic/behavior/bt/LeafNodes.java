@@ -16,7 +16,7 @@ public class LeafNodes {
     public static class IsTooCloseToFront implements BTNode {
         @Override
         public Action evaluate(Vehicle v, RoadContext ctx) {
-            return ctx.isCollisionImminent() ? Action.SLOW_DOWN : null;
+            return ctx.isTooCloseToFront() ? Action.SLOW_DOWN : null;
         }
     }
 
