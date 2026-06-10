@@ -1,6 +1,7 @@
 package com.myteam.traffic.vehicle;
 
 import com.myteam.traffic.behavior.DriverBehavior;
+import com.myteam.traffic.ui.SoundManager;
 
 public class Bicycle extends Vehicle {
 
@@ -17,5 +18,6 @@ public class Bicycle extends Vehicle {
     @Override
     public void honk() {
         System.out.println("Kính coong! (Bicycle)");
+        SoundManager.playSound("bicycle_bell.wav");
     }
 }

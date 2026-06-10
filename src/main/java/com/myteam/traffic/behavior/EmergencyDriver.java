@@ -1,8 +1,8 @@
 package com.myteam.traffic.behavior;
 
-import traffic.common.Action;
-import traffic.model.context.RoadContext;
-import traffic.model.vehicle.Vehicle;
+import com.myteam.traffic.common.Action;
+import com.myteam.traffic.model.context.RoadContext;
+import com.myteam.traffic.model.vehicle.Vehicle;
 
 public class EmergencyDriver implements DriverBehavior {
 
