@@ -15,6 +15,7 @@ public abstract class Vehicle {
     protected double width;
     protected double height;
     protected double speed;
+    protected double acceleration;
     protected double maxSpeed;
     protected VehicleType type;
     protected boolean isEmergency;
@@ -87,43 +88,24 @@ public abstract class Vehicle {
         syncPoseFromSegment();
     }
 
-    // ── Di chuyển ─────────────────────────────────────────────
-
-    /** Tiến trên segment theo {@code speed} và độ dài đoạn đường. */
-    public void advanceOnSegment() {
-        if (currentSegment == null || currentLane == null) {
-            moveForwardEuclidean();
-            return;
-        }
-        if (speed <= 0) {
-            return;
-        }
-        double length = currentSegment.getLength();
-        if (length <= 0) {
-            return;
-        }
-        segmentProgress = Math.min(1.0, segmentProgress + speed / length);
-        syncPoseFromSegment();
+    // ─── Đồng bộ vị trí từ dữ liệu hiện tại ────────────────────────────
+    public void syncPositionFromSegment() {
+        if (currentSegment == null || currentLane == null) return;
+        
+        double[] pose = currentSegment.getPositionOnLane(
+            currentLane.getIndex(), 
+            segmentProgress
+        );
+        this.position = new Position(pose[0], pose[1]);
+        this.direction = new Direction(pose[2]);
     }
 
-    /** Di chuyển tự do khi chưa gắn segment (tương thích ngược). */
-    public void moveForward() {
-        if (travelMode == TravelMode.ON_SEGMENT && currentSegment != null) {
-            advanceOnSegment();
-        } else if (travelMode == TravelMode.ON_INTERSECTION_PATH) {
-            // PathFollower gọi từ controller; fallback không làm gì nếu speed = 0
-        } else {
-            moveForwardEuclidean();
-        }
-    }
-
-    private void moveForwardEuclidean() {
-        if (speed <= 0) {
-            return;
-        }
-        double newX = position.getX() + speed * Math.cos(direction.toRadians());
-        double newY = position.getY() + speed * Math.sin(direction.toRadians());
-        this.position = new Position(newX, newY);
+    public void syncPositionFromPath() {
+        if (activePath == null) return;
+        
+        double[] sample = activePath.sampleAt(pathProgress);
+        this.position = new Position(sample[0], sample[1]);
+        this.direction = new Direction(sample[2]);
     }
 
     private void syncPoseFromSegment() {
@@ -139,48 +121,16 @@ public abstract class Vehicle {
         return activePath != null && pathProgress >= activePath.getPathLength();
     }
 
-    // ── Tốc độ ────────────────────────────────────────────────
+    // --- API Vật lý nguyên tử (Atomic Physical API) ---
 
-    public void accelerate() {
-        //speed = Math.min(maxSpeed, speed + 1);
-        double limit = (currentSegment != null)
-            ? currentSegment.getSpeedLimit()   // cần thêm getter này
-            : maxSpeed;
-        speed = Math.min(Math.min(maxSpeed, limit), speed + 1);
+    public void applyAcceleration(double acc, double deltaTime) {
+        this.acceleration = acc;
+        this.speed = Math.max(0, Math.min(maxSpeed, speed + acceleration * deltaTime));
     }
 
-    public void slowDown() {
-        speed = Math.max(0, speed - 1);
-    }
-
-    public void stop() {
-        speed = 0;
-    }
-
-    /** Stub — đổi làn trên segment sẽ bổ sung sau. */
-    public void changeLane() {
-        //System.out.printf("[%s] changeLane (stub)%n", type);
-        if (currentSegment == null) return;
-
-        List<Lane> lanes = currentSegment.getLanes();
-        int currentIndex = currentLane.getIndex();
-
-        // Tìm làn kề — ưu tiên làn bên phải, fallback sang trái
-        Lane targetLane = lanes.stream()
-            .filter(l -> l.getIndex() == currentIndex + 1
-                      || l.getIndex() == currentIndex - 1)
-            .filter(l -> l.getDirection() == currentLane.getDirection())
-            .findFirst()
-            .orElse(null);
-
-        if (targetLane != null) {
-            currentLane = targetLane;
-            syncPoseFromSegment(); // cập nhật position theo làn mới
-        }
-    }
-
-    public void uTurn() {
-        System.out.printf("[%s] uTurn (stub)%n", type);
+    public void changeLaneIndex(int newLaneIndex) {
+        // Chỉ thực hiện việc gán lane, logic an toàn nằm ở Strategy
+        this.currentLane = currentSegment.getLanes().get(newLaneIndex);
     }
 
     // ── plannedExit ───────────────────────────────────────────
@@ -276,7 +226,8 @@ public abstract class Vehicle {
     }
 
     public void setSpeed(double speed) {
-        this.speed = speed;
+        //this.speed = speed;
+        this.speed = Math.max(0, Math.min(maxSpeed, speed));
     }
 
     public double getMaxSpeed() {
@@ -321,4 +272,26 @@ public abstract class Vehicle {
     private static double clamp01(double t) {
         return Math.max(0.0, Math.min(1.0, t));
     }
+
+    // ─── Cập nhật trạng thái nguyên tử ─────────────────────────────────
+    public void setSegmentProgress(double progress) {
+        this.segmentProgress = clamp01(progress);
+    }
+
+    public void setCurrentLane(Lane lane) {
+        this.currentLane = lane;
+    }
+
+    public void setCurrentSegment(RoadSegment segment) {
+        this.currentSegment = segment;
+    }
+
+    public void setActivePath(IntersectionPath path) {
+        this.activePath = path;
+    }
+
+    public void setCurrentIntersection(Intersection inter) {
+        this.currentIntersection = inter;
+    }
+
 }

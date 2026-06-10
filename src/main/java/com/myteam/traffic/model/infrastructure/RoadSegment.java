@@ -175,5 +175,9 @@ public class RoadSegment {
      * Vì danh sách đã được bảo vệ bởi Collections.unmodifiableList, việc trả trực tiếp vẫn đảm bảo an toàn.
      */
     public List<Lane> getLanes() { return lanes; }
+
+    public double getSpeedLimit(){
+        return 90.0; // Tạm thời mặc định tốc độ tối đa là 90 km/h để đơn giản hoá
+    }
 }
 

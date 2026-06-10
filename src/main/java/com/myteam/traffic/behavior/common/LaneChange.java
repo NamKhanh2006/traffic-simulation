@@ -1,67 +1,98 @@
-// LaneChange.java
 package com.myteam.traffic.behavior.common;
 
-import com.myteam.traffic.vehicle.Vehicle;
-import com.myteam.traffic.context.RoadContext;
+import com.myteam.traffic.vehicle.VehicleType;
+import com.myteam.traffic.model.infrastructure.Lane;;
 
 /**
  * Utility class for lane-change manoeuvres with MOBIL safety check.
+ * Follows Strategic Design Pattern - contains ONLY calculation logic.
  */
-public class LaneChange {
+public final class LaneChange {
     private LaneChange() {}
 
     // MOBIL parameters
-    private static final double INCENTIVE_THRESHOLD = 0.2;   // lợi ích tối thiểu (m/s²)
-    private static final double POLITENESS_FACTOR = 0.5;     // quan tâm đến xe sau
-    private static final double MAX_SAFE_BRAKING = 2.0;       // phanh tối đa cho phép (m/s²)
+    private static final double INCENTIVE_THRESHOLD = 0.2;   // minimum benefit (m/s²)
+    private static final double POLITENESS_FACTOR = 0.5;     // consideration for following vehicles
+    private static final double MAX_SAFE_BRAKING = 2.0;      // maximum allowed braking (m/s²)
 
     /**
-     * Kiểm tra an toàn theo MOBIL trước khi đổi làn.
-     * @param self xe muốn đổi làn
-     * @param context ngữ cảnh (cần cung cấp rearOld, rearNew, targetLane)
-     * @param targetLane làn đích
-     * @return true nếu được phép đổi làn
+     * Checks lane change safety using MOBIL model.
+     * 
+     * @param subjectSpeed       Speed of subject vehicle (m/s)
+     * @param subjectMaxSpeed    Max speed of subject vehicle (m/s)
+     * @param leaderOldSpeed     Speed of leader in current lane (m/s) or -1 if none
+     * @param gapToLeaderOld     Distance to leader in current lane (m)
+     * @param leaderNewSpeed     Speed of leader in target lane (m/s) or -1 if none
+     * @param gapToLeaderNew     Distance to leader in target lane (m)
+     * @param followerNewSpeed   Speed of follower in target lane (m/s) or -1 if none
+     * @param gapToFollowerNew   Distance to follower in target lane (m)
+     * @return true if lane change is safe and beneficial
      */
-    public static boolean isLaneChangeSafeMOBIL(Vehicle self, RoadContext context, int targetLane) {
-        Vehicle rearOld = context.getRearVehicleOnCurrentLane();   // xe sau trên làn cũ
-        Vehicle rearNew = context.getRearVehicleOnLane(targetLane); // xe sau trên làn mới
-
-        // Giả sử có phương thức getAcceleration() trong Vehicle
-        double aSelfOld = self.getAcceleration();
-        double aSelfNew = context.getPredictedAccelerationOnLane(self, targetLane);
-        double aRearOld = (rearOld != null) ? rearOld.getAcceleration() : 0;
-        double aRearNew = (rearNew != null) ? rearNew.getAcceleration() : 0;
-
-        // Safety condition: xe sau trên làn mới không bị phanh quá mức
-        double brakingNew = aRearNew - (rearNew != null ? rearNew.getDecelerationLimit() : -MAX_SAFE_BRAKING);        if (brakingNew > 0) return false;
-        if (brakingNew > 0) return false;
+    public static boolean isLaneChangeSafeMOBIL(
+        double subjectSpeed,
+        double subjectMaxSpeed,
+        double leaderOldSpeed,
+        double gapToLeaderOld,
+        double leaderNewSpeed,
+        double gapToLeaderNew,
+        double followerNewSpeed,
+        double gapToFollowerNew
+    ) {
+        // Calculate accelerations using pure math
+        double aSelfOld = DistanceKeeping.calculateIDMAcceleration(
+            subjectSpeed, subjectMaxSpeed, leaderOldSpeed, gapToLeaderOld
+        );
         
-        // Incentive condition: lợi ích tổng thể > ngưỡng
+        double aSelfNew = DistanceKeeping.calculateIDMAcceleration(
+            subjectSpeed, subjectMaxSpeed, leaderNewSpeed, gapToLeaderNew
+        );
+        
+        double aFollowerNew = (followerNewSpeed >= 0) ? 
+            DistanceKeeping.calculateIDMAcceleration(
+                followerNewSpeed, subjectMaxSpeed, subjectSpeed, gapToFollowerNew
+            ) : 0;
+
+        double aFollowerNewCurrent = (followerNewSpeed >= 0 && leaderNewSpeed >= 0) ? 
+            DistanceKeeping.calculateIDMAcceleration(
+                followerNewSpeed, subjectMaxSpeed, leaderNewSpeed, gapToFollowerNew + gapToLeaderNew
+            ) : 0;
+
+        // Safety condition: follower shouldn't need to brake too hard
+        if (aFollowerNew - aFollowerNewCurrent > MAX_SAFE_BRAKING) {
+            return false;
+        }
+        
+        // Incentive condition: total benefit > threshold
         double deltaSelf = aSelfNew - aSelfOld;
-        double deltaRearOld = aRearOld - (rearOld != null ? rearOld.getAccelerationAfterSelfLeaves() : 0);
-        double deltaRearNew = aRearNew - (rearNew != null ? rearNew.getAccelerationAfterSelfJoins() : 0);
-        double totalBenefit = deltaSelf + POLITENESS_FACTOR * (deltaRearOld + deltaRearNew);
+        double deltaFollower = aFollowerNew - aFollowerNewCurrent;
+        double totalBenefit = deltaSelf + POLITENESS_FACTOR * deltaFollower;
+        
         return totalBenefit > INCENTIVE_THRESHOLD;
     }
 
-    private static double estimateAcceleration(Vehicle v, Vehicle leader) {
-        return DistanceKeeping.idmAcceleration(v, leader);
-    }
-
-    private static double estimateAccelerationOnLane(Vehicle self, RoadContext context, int targetLane) {
-        Vehicle frontOnTarget = context.getFrontVehicleOnLane(targetLane);
-        return DistanceKeeping.idmAcceleration(self, frontOnTarget);
-    }
     /**
-     * Đổi làn chỉ khi an toàn theo MOBIL.
+     * Checks if lane change is physically possible based on lane markings.
+     * 
+     * @param currentLane     Current lane object
+     * @param targetLaneIndex Index of target lane
+     * @param vehicleType     Type of vehicle
+     * @param isEmergency     If vehicle is in emergency mode
+     * @return true if lane change is physically allowed
      */
-    public static void changeLaneIfSafe(Vehicle v, RoadContext context, int targetLane) {
-        if (isLaneChangeSafeMOBIL(v, context, targetLane)) {
-            v.changeLane();
+    public static boolean isLaneChangePhysicallyPossible(
+        Lane currentLane,
+        int targetLaneIndex,
+        VehicleType vehicleType,
+        boolean isEmergency
+    ) {
+        int currentIndex = currentLane.getIndex();
+        
+        if (targetLaneIndex == currentIndex - 1) {
+            return currentLane.canCrossLeft(vehicleType, isEmergency);
+        } else if (targetLaneIndex == currentIndex + 1) {
+            return currentLane.canCrossRight(vehicleType, isEmergency);
         }
-    }
-
-    public static void changeLane(Vehicle v) {
-        v.changeLane();
+        
+        return false;
     }
 }
