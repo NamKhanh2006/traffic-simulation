@@ -3,6 +3,7 @@ package com.myteam.traffic.behavior;
 import com.myteam.traffic.behavior.common.Action;
 import com.myteam.traffic.context.RoadContext;
 import com.myteam.traffic.vehicle.Vehicle;
+import com.myteam.traffic.behavior.common.DistanceKeeping;
 
 /**
  * Driver behaviour for emergency vehicles (ambulance, fire truck, police).
@@ -30,7 +31,7 @@ public class EmergencyDriver implements DriverBehavior {
         }
         Vehicle front = context.getNearestFrontVehicle();
         // Dừng khẩn cấp nếu va chạm sắp xảy ra
-        if (DistanceKeeping.isCollisionImminent(v, front)) {
+        if (DistanceKeeping.isImminentCollision(v, front)) {
             return Action.STOP;
         }
         if (front != null) {

@@ -36,7 +36,7 @@ public class AggressiveDriver implements DriverBehavior {
         Vehicle front = context.getNearestFrontVehicle();
         // Ưu tiên đạt max speed
         if (v.getSpeed() < v.getMaxSpeed() && 
-            !DistanceKeeping.isCollisionImminent(v, front)) {
+            !DistanceKeeping.isImminentCollision(v, front)) {
             return Action.ACCELERATE;
         }
 

@@ -1,5 +1,7 @@
 package com.myteam.traffic.behavior.common;
 
+import com.myteam.traffic.vehicle.Vehicle;
+
 /**
  * Pure math utility class for safe following-distance logic with TTC and IDM.
  * Follows Strategic Design Pattern - contains ONLY calculation logic.
@@ -34,6 +36,18 @@ public class DistanceKeeping {
         return gap / relSpeed;
     }
 
+    /**
+     * Tính Time-to-Collision với xe phía trước.
+     * @return TTC (giây), hoặc POSITIVE_INFINITY nếu không có xe trước hoặc v_rel <= 0
+     */
+    public static double timeToCollision(Vehicle self, Vehicle front) {
+        if (front == null) return Double.POSITIVE_INFINITY;
+        double gap = self.getPosition().distanceTo(front.getPosition());
+        double relSpeed = self.getSpeed() - front.getSpeed();
+        if (relSpeed <= 0) return Double.POSITIVE_INFINITY; // không đuổi kịp
+        return gap / relSpeed;
+    }
+
     public static double calculateTimeHeadway(
         double currentSpeed, 
         double gap
@@ -49,6 +63,10 @@ public class DistanceKeeping {
      */
     public static boolean isImminentCollision(double ttc) {
         return ttc < MIN_TTC;
+    }
+
+    public static boolean isImminentCollision(Vehicle self, Vehicle front){
+        return timeToCollision(self, front) < MIN_TTC;
     }
 
     /**

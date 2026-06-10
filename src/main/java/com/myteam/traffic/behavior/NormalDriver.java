@@ -5,15 +5,16 @@ import com.myteam.traffic.behavior.common.Action;
 import com.myteam.traffic.behavior.bt.*;
 import com.myteam.traffic.context.RoadContext;
 import com.myteam.traffic.vehicle.Vehicle;
+import com.myteam.traffic.behavior.common.DistanceKeeping;
 
 public class NormalDriver implements DriverBehavior {
     private final BTNode decisionTree;
 
     public NormalDriver() {
         this.decisionTree = new SelectorNode(
-            new HasRedLightAhead(),
-            new IsTooCloseToFront(),
-            new HasEmergencyNearby(),
+            new LeafNodes.HasRedLightAhead(),
+            new LeafNodes.IsTooCloseToFront(),
+            new LeafNodes.HasEmergencyNearby(),
             (v, ctx) -> Action.MOVE_FORWARD
         );
     }
@@ -22,7 +23,7 @@ public class NormalDriver implements DriverBehavior {
     public Action decideAction(Vehicle v, RoadContext context) {
         Vehicle front = context.getNearestFrontVehicle();
         // 1. Dừng khẩn cấp nếu va chạm sắp xảy ra
-        if (DistanceKeeping.isCollisionImminent(v, front)) {
+        if (DistanceKeeping.isImminentCollision(v, front)) {
             return Action.STOP;
         }
         // 2. Giảm tốc nếu TTC không an toàn
