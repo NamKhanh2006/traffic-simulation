@@ -6,152 +6,159 @@ import com.myteam.traffic.context.RoadContext;
 import com.myteam.traffic.light.TrafficLight;
 import com.myteam.traffic.light.TrafficLightState;
 import com.myteam.traffic.model.geometry.Position;
-import com.myteam.traffic.model.infrastructure.Lane;
-import com.myteam.traffic.model.infrastructure.RoadNetwork;
-import com.myteam.traffic.model.infrastructure.RoadSegment;
+import com.myteam.traffic.model.geometry.Direction;
+import com.myteam.traffic.model.infrastructure.*;
 import com.myteam.traffic.model.infrastructure.intersection.Intersection;
 import com.myteam.traffic.navigation.IntersectionNavigator;
 import com.myteam.traffic.navigation.IntersectionPath;
 import com.myteam.traffic.navigation.PathFollower;
 import com.myteam.traffic.rule.TrafficRule;
-import com.myteam.traffic.vehicle.PlannedExit;
-import com.myteam.traffic.vehicle.TravelMode;
-import com.myteam.traffic.vehicle.Vehicle;
+import com.myteam.traffic.vehicle.*;
+import com.myteam.traffic.vehicle.emergency.Ambulance;
+import com.myteam.traffic.vehicle.emergency.FireTruck;
 
 import java.util.*;
+import java.util.function.Supplier;
 
 /**
  * Bộ điều phối trung tâm của hệ thống mô phỏng giao thông.
- *
- * Mỗi tick, controller thực hiện 3 việc theo thứ tự:
- *
- *   1. Tick tất cả đèn giao thông
- *   2. Chụp ảnh vị trí tất cả xe (positionSnapshot)
- *   3. Với mỗi xe:
- *        a. Xây dựng RoadContext (bao gồm tìm nearbyVehicles)
- *        b. Behavior đề xuất action
- *        c. isVehicleAllowed() kiểm tra action qua các rule
- *        d. Nếu bị từ chối → handleRejection() → thử lại
- *        e. Thực thi action
- *
- * ┌─────────────────────────────────────────────────────────────┐
- * │ isVehicleAllowed() — tái sử dụng từ code của teammate       │
- * │                                                             │
- * │  globalRules + ctx.getLocalRules()                          │
- * │       → sort theo priority (desc)                           │
- * │       → bỏ qua rule nếu appliesTo(v) == false               │
- * │       → rule đầu tiên trả false → REJECT ngay lập tức       │
- * └─────────────────────────────────────────────────────────────┘
- *
- * nearbyVehicles — định nghĩa theo topology mạng lưới đường:
- *   Case 1: Cùng RoadSegment với subject
- *   Case 2: Đang ở Intersection mà subject sắp đi tới
- *   Case 3: Đang ở cùng Intersection với subject
+ * <p>
+ * Mỗi tick, controller thực hiện:
+ * <ol>
+ *   <li>Cập nhật tất cả đèn giao thông</li>
+ *   <li>Chụp ảnh vị trí tất cả xe (snapshot)</li>
+ *   <li>Với mỗi xe: tạo RoadContext → behavior quyết định Action → kiểm tra luật → thực thi (hoặc fallback)</li>
+ *   <li>Xử lý vào/ra giao lộ</li>
+ * </ol>
+ * <p>
+ * Kiến trúc tuân thủ nguyên tắc:
+ * <ul>
+ *   <li><b>Vehicle</b> chỉ cung cấp atomic methods (thay đổi trạng thái vật lý)</li>
+ *   <li><b>DriverBehavior</b> chịu trách nhiệm ra quyết định (Action)</li>
+ *   <li><b>Utility classes</b> (DistanceKeeping, LaneChange, OvertakeStrategy) đảm nhiệm các kỹ năng phức tạp</li>
+ *   <li><b>TrafficController</b> chỉ điều phối và kiểm tra luật</li>
+ * </ul>
  */
 public class TrafficController {
 
     // ── Ngưỡng khoảng cách để xác định xe "sắp tới" intersection ──
-    // Nếu xe còn cách điểm cuối đoạn đường dưới 80 world units
-    // thì mới bắt đầu "nhìn" vào intersection phía trước
     private static final double APPROACHING_THRESHOLD = 80.0;
 
     // ── Hạ tầng ───────────────────────────────────────────────────
     private final RoadNetwork network;
+    private final IntersectionNavigator intersectionNavigator;
+    private final PathFollower pathFollower = new PathFollower();
 
     // ── Danh sách thực thể trong simulation ──────────────────────
-    private final List<Vehicle>      vehicles    = new ArrayList<>();
-    private final List<TrafficLight> lights      = new ArrayList<>();
+    private final List<Vehicle> vehicles = new ArrayList<>();
+    private final List<TrafficLight> lights = new ArrayList<>();
 
-    // ── Rules — tái sử dụng từ code của teammate ─────────────────
-    private final List<TrafficRule>  globalRules = new ArrayList<>();
+    // ── Luật giao thông (tái sử dụng từ teammate) ─────────────────
+    private final List<TrafficRule> globalRules = new ArrayList<>();
 
-    // ── Điều hướng giao lộ ───────────────────────────────────────
-    private final IntersectionNavigator intersectionNavigator;
-    private final PathFollower          pathFollower = new PathFollower();
+    // ── Factory để tạo xe (cho phép mở rộng) ──────────────────────
+    private Supplier<Vehicle> vehicleFactory;
 
-    // ═══════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════
     // Constructor
-    // ═══════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════
 
     public TrafficController(RoadNetwork network) {
         if (network == null) throw new IllegalArgumentException("Network không được null");
         this.network = network;
         this.intersectionNavigator = new IntersectionNavigator(network);
+        // Mặc định tạo xe Car, có thể thay bằng setVehicleFactory
+        this.vehicleFactory = () -> new Car(new Position(0, 0), new Direction(0), null);
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // Đăng ký thực thể — API công khai
-    // ═══════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════
+    // API công khai – thêm/xoá thực thể và luật
+    // ═══════════════════════════════════════════════════════════════
 
-    public void spawnVehicle(RoadSegment entry, Lane lane, DriverBehavior behavior) {
-        Vehicle v = new Car(...);   // hoặc loại xe khác
-        v.placeOnSegment(entry, lane, 0.0);
+    /**
+     * Đặt factory để tạo xe khi spawn.
+     * @param factory Supplier trả về đối tượng Vehicle đã được cấu hình (vị trí, hướng, behavior sẽ được ghi đè sau)
+     */
+    public void setVehicleFactory(Supplier<Vehicle> factory) {
+        this.vehicleFactory = factory;
+    }
+
+    /**
+     * Sinh một xe mới tại đầu vào của một đoạn đường.
+     * @param entrySegment Đoạn đường bắt đầu
+     * @param lane Làn đường
+     * @param behavior Hành vi lái xe
+     * @param vehicleType Loại xe (để tạo đúng lớp con)
+     */
+    public void spawnVehicle(RoadSegment entrySegment, Lane lane, DriverBehavior behavior, VehicleType vehicleType) {
+        Vehicle v = createVehicleByType(vehicleType, behavior);
+        v.placeOnSegment(entrySegment, lane, 0.0);
         addVehicle(v);
+    }
+
+    private Vehicle createVehicleByType(VehicleType type, DriverBehavior behavior) {
+        Position startPos = new Position(0, 0);
+        Direction startDir = new Direction(0);
+        switch (type) {
+            case CAR: return new Car(startPos, startDir, behavior);
+            case MOTORBIKE: return new Motorbike(startPos, startDir, behavior);
+            case BICYCLE: return new Bicycle(startPos, startDir, behavior);
+            case EMERGENCY: return new Ambulance(startPos, startDir, behavior);
+            default: return new Car(startPos, startDir, behavior);
+        }
     }
 
     public void addVehicle(Vehicle v) {
         if (v != null) vehicles.add(v);
     }
 
-    /**
-     * Đăng ký xe và đặt lên segment/lane ban đầu.
-     */
-    public void addVehicle(Vehicle v, RoadSegment segment, Lane lane, double t) {
-        if (v == null) return;
-        v.placeOnSegment(segment, lane, t);
-        vehicles.add(v);
+    public void addLight(TrafficLight light) {
+        if (light != null) lights.add(light);
     }
 
-    public void addLight(TrafficLight tl) { if (tl != null) lights.add(tl);     }
+    public void addRule(TrafficRule rule) {
+        if (rule != null) globalRules.add(rule);
+    }
 
-    // Ba method dưới đây tái sử dụng nguyên từ code của teammate
-    public void addRule(TrafficRule rule)    { globalRules.add(rule);    }
-    public void removeRule(TrafficRule rule) { globalRules.remove(rule); }
+    public void removeRule(TrafficRule rule) {
+        globalRules.remove(rule);
+    }
 
     public List<TrafficRule> getGlobalRules() {
         return Collections.unmodifiableList(globalRules);
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // TICK — vòng lặp chính, gọi mỗi giây
-    // ═══════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════
+    // TICK – vòng lặp chính
+    // ═══════════════════════════════════════════════════════════════
 
     public void tick() {
-        // Bước 1: Loại bỏ xe đã đi hết đường
+        // 1. Loại bỏ xe đã hoàn thành hành trình (không còn đường phía trước)
         vehicles.removeIf(v ->
-            v.getCurrentSegment() != null && v.getSegmentProgress() >= 1.0
-            && findUpcomingIntersection(v, v.getPosition()) == null
+                v.getTravelMode() == TravelMode.ON_SEGMENT &&
+                        v.getSegmentProgress() >= 1.0 &&
+                        findUpcomingIntersection(v, v.getPosition()) == null
         );
 
-        // Bước 2: Cập nhật tất cả đèn giao thông trước
-        // (đèn phải đổi trạng thái trước khi xe ra quyết định)
+        // 2. Cập nhật tất cả đèn giao thông trước khi xe ra quyết định
         for (TrafficLight light : lights) {
             light.tick();
         }
 
-        // Bước 3: Chụp ảnh vị trí tất cả xe TẠI ĐẦU TICK
-        // Phải làm trước vòng lặp xe — xem giải thích trong takePositionSnapshot()
+        // 3. Chụp ảnh vị trí tất cả xe TẠI ĐẦU TICK (quan trọng để đảm bảo công bằng)
         Map<Vehicle, Position> snapshot = takePositionSnapshot();
 
-        // Bước 4: Xử lý từng xe
+        // 4. Xử lý từng xe
         for (Vehicle v : vehicles) {
             RoadContext ctx = buildContext(v, snapshot);
             processVehicle(v, ctx);
         }
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // BƯỚC 2: Chụp ảnh vị trí
-    // ═══════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════
+    // Snapshot vị trí
+    // ═══════════════════════════════════════════════════════════════
 
-    /**
-     * Tạo bản đồ "xe → vị trí hiện tại" trước khi bất kỳ xe nào di chuyển.
-     *
-     * Tại sao cần snapshot?
-     * Nếu không có snapshot, xe A xử lý trước sẽ di chuyển, rồi khi
-     * xe B hỏi "xe A đang ở đâu?" nó thấy vị trí SAU khi di chuyển.
-     * Snapshot đảm bảo mọi xe đọc cùng một "bức ảnh" của thế giới.
-     */
     private Map<Vehicle, Position> takePositionSnapshot() {
         Map<Vehicle, Position> snapshot = new HashMap<>();
         for (Vehicle v : vehicles) {
@@ -160,18 +167,13 @@ public class TrafficController {
         return Collections.unmodifiableMap(snapshot);
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // BƯỚC 3A: Xây dựng RoadContext
-    // ═══════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════
+    // Xây dựng RoadContext cho một xe
+    // ═══════════════════════════════════════════════════════════════
 
-    /**
-     * Lắp ráp toàn bộ thông tin môi trường cho một xe tại tick này.
-     * Đây là nơi gọi findNearbyVehicles() với logic 3 case.
-     */
-    private RoadContext buildContext(Vehicle subject,
-                                     Map<Vehicle, Position> snapshot) {
+    private RoadContext buildContext(Vehicle subject, Map<Vehicle, Position> snapshot) {
         TrafficLightState lightState = getCurrentLightState(subject);
-        List<Vehicle>     nearby     = findNearbyVehicles(subject, snapshot);
+        List<Vehicle> nearby = findNearbyVehicles(subject, snapshot);
 
         return new RoadContext.Builder()
                 .subject(subject)
@@ -183,98 +185,50 @@ public class TrafficController {
                 .build();
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // LOGIC TÌM NEARBY VEHICLES — 3 case theo topology
-    // ═══════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════
+    // Tìm xe lân cận theo topology (3 case)
+    // ═══════════════════════════════════════════════════════════════
 
-    /**
-     * Tìm tất cả xe trong tầm ảnh hưởng của {@code subject}.
-     *
-     * Định nghĩa "lân cận" theo topology mạng lưới đường, không phải
-     * khoảng cách Euclid thuần túy. Hai xe có thể cách nhau 5m nhưng
-     * ở hai làn song song chạy cùng chiều — chúng không liên quan nhau.
-     *
-     * Ba case được kiểm tra theo thứ tự:
-     *
-     *   Case 1 — Cùng RoadSegment:
-     *     Xe đi trên cùng đoạn đường, ảnh hưởng trực tiếp đến việc
-     *     giữ khoảng cách, vượt xe, đổi làn của subject.
-     *
-     *   Case 2 — Ở Intersection subject sắp tới:
-     *     Subject còn cách cuối đoạn đường dưới APPROACHING_THRESHOLD.
-     *     Cần biết ai đang ở intersection phía trước để quyết định
-     *     có nên nhập giao lộ không.
-     *
-     *   Case 3 — Cùng Intersection với subject:
-     *     Subject đang trong vùng của một intersection.
-     *     Cần biết các xe khác cùng đang trong giao lộ để tránh va chạm.
-     *
-     * @param subject  Xe đang được xét
-     * @param snapshot Bản đồ vị trí đầu tick
-     * @return Danh sách xe lân cận, không chứa subject, không bao giờ null
-     */
-    private List<Vehicle> findNearbyVehicles(Vehicle subject,
-                                              Map<Vehicle, Position> snapshot) {
-        Position    subjectPos     = snapshot.getOrDefault(subject, subject.getPosition());
+    private List<Vehicle> findNearbyVehicles(Vehicle subject, Map<Vehicle, Position> snapshot) {
+        Position subjectPos = snapshot.getOrDefault(subject, subject.getPosition());
         RoadSegment subjectSegment = subject.getCurrentSegment();
-
         Intersection upcoming = findUpcomingIntersection(subject, subjectPos);
-        Intersection current  = subject.getCurrentIntersection();
+        Intersection current = subject.getCurrentIntersection();
         if (current == null) {
             current = findCurrentIntersection(subjectPos);
         }
 
         List<Vehicle> nearby = new ArrayList<>();
-
         for (Vehicle other : vehicles) {
             if (other == subject) continue;
 
-            // ── Case 1: Cùng RoadSegment ───────────────────────────────
-            // Dùng == (so sánh tham chiếu) vì mỗi đoạn đường là object
-            // duy nhất trong RoadNetwork — đúng hơn và nhanh hơn equals()
-            if (subjectSegment != null
-                    && other.getCurrentSegment() == subjectSegment) {
+            // Case 1: cùng RoadSegment
+            if (subjectSegment != null && other.getCurrentSegment() == subjectSegment) {
                 nearby.add(other);
-                continue; // Đã thêm, không cần kiểm tra case 2 và 3
+                continue;
             }
 
             Position otherPos = snapshot.getOrDefault(other, other.getPosition());
 
-            // ── Case 2: Other đang ở intersection subject sắp tới ──────
+            // Case 2: other đang ở intersection mà subject sắp tới
             if (upcoming != null && isAtIntersection(otherPos, upcoming)) {
                 nearby.add(other);
                 continue;
             }
 
-            // ── Case 3: Cả hai đang ở cùng intersection ────────────────
+            // Case 3: cả hai cùng ở một intersection
             if (current != null && isAtIntersection(otherPos, current)) {
                 nearby.add(other);
             }
         }
-
         return nearby;
     }
 
-    /**
-     * Tìm Intersection mà subject ĐANG HƯỚNG TỚI.
-     *
-     * Dựa vào Lane.Direction để biết xe đang đi về đầu nào:
-     *   FORWARD  → xe đi từ start → end  → upcoming tại điểm END
-     *   BACKWARD → xe đi từ end  → start → upcoming tại điểm START
-     *
-     * Chỉ trả về intersection nếu xe đủ gần điểm cuối
-     * (trong vòng APPROACHING_THRESHOLD), tránh trường hợp xe ở giữa
-     * đoạn đường dài đã bị coi là "sắp tới" intersection.
-     *
-     * Trả về null nếu xe chưa trên đường, chưa có làn, hoặc còn xa.
-     */
-    private Intersection findUpcomingIntersection(Vehicle subject,
-                                                   Position subjectPos) {
-        RoadSegment seg  = subject.getCurrentSegment();
-        Lane        lane = subject.getCurrentLane();
+    private Intersection findUpcomingIntersection(Vehicle subject, Position subjectPos) {
+        RoadSegment seg = subject.getCurrentSegment();
+        Lane lane = subject.getCurrentLane();
         if (seg == null || lane == null) return null;
 
-        // Điểm cuối theo hướng di chuyển
         double targetX, targetY;
         if (lane.getDirection() == Lane.Direction.FORWARD) {
             targetX = seg.getEndX();
@@ -284,55 +238,30 @@ public class TrafficController {
             targetY = seg.getStartY();
         }
 
-        // Kiểm tra xe có đủ gần để quan tâm đến intersection này không
         double distToEnd = subjectPos.distanceTo(new Position(targetX, targetY));
         if (distToEnd > APPROACHING_THRESHOLD) return null;
 
-        // findNearestIntersection dùng bán kính 60 để khớp với
-        // cách SimulationView snap endpoint vào intersection khi vẽ đường
         return network.findNearestIntersection(targetX, targetY, 60.0);
     }
 
-    /**
-     * Kiểm tra subject có đang NẰM TRONG một intersection không.
-     *
-     * Duyệt tất cả intersection trong network và kiểm tra vị trí subject.
-     * Bán kính lấy từ getRenderData().radius — cùng giá trị mà UI dùng
-     * để vẽ vòng tròn nút giao, đảm bảo logic nhất quán với hiển thị.
-     *
-     * Trả về intersection đầu tiên chứa subject, hoặc null nếu không có.
-     */
     private Intersection findCurrentIntersection(Position subjectPos) {
         for (Intersection inter : network.getIntersections()) {
-            if (isAtIntersection(subjectPos, inter)) {
-                return inter;
-            }
+            if (isAtIntersection(subjectPos, inter)) return inter;
         }
         return null;
     }
 
-    /**
-     * Kiểm tra vị trí {@code pos} có nằm trong vùng của {@code intersection}.
-     *
-     * Dùng bán kính từ getRenderData() thay vì hằng số cứng để đảm bảo
-     * "vùng intersection" trong logic luôn khớp với "vùng intersection"
-     * trên màn hình.
-     */
     private boolean isAtIntersection(Position pos, Intersection intersection) {
         double radius = intersection.getRenderData().radius;
-        double cx     = intersection.getCenterX();
-        double cy     = intersection.getCenterY();
+        double cx = intersection.getCenterX();
+        double cy = intersection.getCenterY();
         return pos.distanceTo(new Position(cx, cy)) <= radius;
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // BƯỚC 3B: Xử lý hành động
-    // ═══════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════
+    // Xử lý một xe: quyết định → kiểm tra → thực thi (hoặc fallback)
+    // ═══════════════════════════════════════════════════════════════
 
-    /**
-     * Cho xe đề xuất hành động → kiểm tra rule → thực thi.
-     * Nếu bị từ chối, behavior tự chọn fallback và thử lại một lần.
-     */
     private void processVehicle(Vehicle v, RoadContext ctx) {
         Action proposed = v.getBehavior().decideAction(v, ctx);
 
@@ -343,27 +272,129 @@ public class TrafficController {
             executeAction(v, fallback);
         }
 
+        // Xử lý vào/ra giao lộ sau khi di chuyển
         tryEnterIntersection(v);
         tryExitIntersection(v);
     }
 
     /**
-     * Khi xe đến cuối segment và đã có {@link PlannedExit}, tạo quỹ đạo cung.
+     * Kiểm tra action có được phép dựa trên tất cả luật (global + local).
+     * Xe khẩn cấp được miễn trừ nếu rule.appliesTo() trả false.
      */
+    public boolean isVehicleAllowed(Vehicle v, Action a, RoadContext ctx) {
+        List<TrafficRule> allRules = new ArrayList<>(globalRules);
+        allRules.addAll(ctx.getLocalRules());
+        allRules.sort(Comparator.comparingInt(TrafficRule::getPriority).reversed());
+
+        for (TrafficRule rule : allRules) {
+            if (!rule.appliesTo(v)) continue;
+            if (!rule.isAllowed(v, a, ctx)) {
+                System.out.printf("[CONTROLLER] REJECTED: %s → %s (rule: %s)%n",
+                        v.getType(), a, rule.getClass().getSimpleName());
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Thực thi action (tách biệt theo TravelMode)
+    // ═══════════════════════════════════════════════════════════════
+
+    private void executeAction(Vehicle v, Action action) {
+        if (v.getTravelMode() == TravelMode.ON_INTERSECTION_PATH) {
+            executeOnIntersectionPath(v, action);
+        } else {
+            executeOnSegment(v, action);
+        }
+    }
+
+    private void executeOnSegment(Vehicle v, Action action) {
+        switch (action) {
+            case MOVE_FORWARD:
+                v.setSegmentProgress(v.getSegmentProgress() + v.getSpeed() / v.getCurrentSegment().getLength());
+                v.syncPositionFromSegment();
+                break;
+            case ACCELERATE:
+                v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + 2.0));
+                break;
+            case SLOW_DOWN:
+                v.setSpeed(Math.max(0, v.getSpeed() - 2.0));
+                break;
+            case STOP:
+                v.setSpeed(0);
+                break;
+            case CHANGE_LANE:
+                // Đơn giản: chuyển sang làn kề bên phải nếu có
+                int newIdx = v.getCurrentLane().getIndex() + 1;
+                if (newIdx < v.getCurrentSegment().getLanes().size()) {
+                    v.changeLaneIndex(newIdx);
+                }
+                break;
+            case OVERTAKE:
+                // Vượt: tăng tốc + chuyển làn trái
+                v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + 3.0));
+                int leftIdx = v.getCurrentLane().getIndex() - 1;
+                if (leftIdx >= 0) {
+                    v.changeLaneIndex(leftIdx);
+                }
+                break;
+            case TURN_LEFT:
+                v.setPlannedExit(PlannedExit.LEFT);
+                break;
+            case TURN_RIGHT:
+                v.setPlannedExit(PlannedExit.RIGHT);
+                break;
+            case U_TURN:
+                v.setPlannedExit(PlannedExit.LEFT);
+                break;
+            case HONK:
+                v.honk();
+                break;
+            default:
+                v.setSegmentProgress(v.getSegmentProgress() + v.getSpeed() / v.getCurrentSegment().getLength());
+                v.syncPositionFromSegment();
+        }
+        // Đảm bảo tiến độ không vượt quá 1
+        if (v.getSegmentProgress() > 1.0) v.setSegmentProgress(1.0);
+    }
+
+    private void executeOnIntersectionPath(Vehicle v, Action action) {
+        switch (action) {
+            case MOVE_FORWARD:
+                pathFollower.advance(v);
+                break;
+            case ACCELERATE:
+                v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + 2.0));
+                pathFollower.advance(v);
+                break;
+            case SLOW_DOWN:
+                v.setSpeed(Math.max(0, v.getSpeed() - 2.0));
+                pathFollower.advance(v);
+                break;
+            case STOP:
+                v.setSpeed(0);
+                break;
+            case HONK:
+                v.honk();
+                break;
+            default:
+                pathFollower.advance(v);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Quản lý vào/ra giao lộ (navigation)
+    // ═══════════════════════════════════════════════════════════════
+
     private void tryEnterIntersection(Vehicle v) {
-        if (v.getTravelMode() != TravelMode.ON_SEGMENT) {
-            return;
-        }
-        if (v.getPlannedExit() == PlannedExit.NONE) {
-            return;
-        }
-        if (v.getSegmentProgress() < 1.0) {
-            return;
-        }
+        if (v.getTravelMode() != TravelMode.ON_SEGMENT) return;
+        if (v.getPlannedExit() == PlannedExit.NONE) return;
+        if (v.getSegmentProgress() < 1.0) return;
 
         Intersection upcoming = intersectionNavigator.peekUpcomingIntersection(v);
         if (upcoming != null && !intersectionNavigator.canMerge(v, upcoming, vehicles)) {
-            return;
+            return; // có xe trên cung quá gần
         }
 
         IntersectionPath path = intersectionNavigator.buildPath(v);
@@ -378,112 +409,26 @@ public class TrafficController {
         v.clearPlannedExit();
     }
 
-    /** Khi hoàn thành quỹ đạo cung, gán segment/lane nhánh ra. */
     private void tryExitIntersection(Vehicle v) {
-        if (v.getTravelMode() != TravelMode.ON_INTERSECTION_PATH) {
-            return;
-        }
-        if (!v.isIntersectionPathComplete()) {
-            return;
-        }
+        if (v.getTravelMode() != TravelMode.ON_INTERSECTION_PATH) return;
+        if (!v.isIntersectionPathComplete()) return;
+
         intersectionNavigator.applyExit(v);
     }
 
-    /**
-     * Kiểm tra xe {@code v} có được phép thực hiện action {@code a} không.
-     *
-     * Tái sử dụng nguyên logic từ code của teammate:
-     *   - Gộp globalRules + local rules từ context
-     *   - Sort theo priority giảm dần
-     *   - Bỏ qua rule không áp dụng cho loại xe này (appliesTo)
-     *   - Rule đầu tiên từ chối → trả false ngay, không kiểm tra tiếp
-     *
-     * appliesTo() cần được thêm vào TrafficRule interface như default method.
-     * Xe khẩn cấp (isEmergency = true) sẽ được xử lý trong appliesTo()
-     * của từng rule — mặc định trả true, override khi cần miễn trừ.
-     *
-     * @param v   Xe cần kiểm tra
-     * @param a   Action được đề xuất
-     * @param ctx Context hiện tại của xe
-     * @return true nếu được phép, false nếu bị từ chối
-     */
-    public boolean isVehicleAllowed(Vehicle v, Action a, RoadContext ctx) {
-        // Gộp global + local rules — tái sử dụng từ teammate
-        List<TrafficRule> allRules = new ArrayList<>(globalRules);
-        allRules.addAll(ctx.getLocalRules());
+    // ═══════════════════════════════════════════════════════════════
+    // Helper: lấy trạng thái đèn giao thông (hiện tại lấy đèn đầu tiên)
+    // TODO: cải tiến để lấy đèn đúng với intersection sắp tới của xe
+    // ═══════════════════════════════════════════════════════════════
 
-        // Sort theo priority giảm dần — tái sử dụng từ teammate
-        allRules.sort(Comparator.comparingInt(TrafficRule::getPriority).reversed());
-
-        for (TrafficRule rule : allRules) {
-            // Bỏ qua rule không áp dụng cho xe này — tái sử dụng từ teammate
-            if (!rule.appliesTo(v)) continue;
-
-            if (!rule.isAllowed(v, a, ctx)) {
-                // Log khi bị từ chối — tái sử dụng từ teammate
-                System.out.printf("[CONTROLLER] REJECTED: %s → %s (rule: %s)%n",
-                        v.getType(), a, rule.getClass().getSimpleName());
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * Thực thi action theo {@link TravelMode}.
-     * Rẽ tại giao lộ qua {@link PlannedExit}, không qua {@code turnLeft}/{@code turnRight}.
-     */
-    private void executeAction(Vehicle v, Action action) {
-        if (v.getTravelMode() == TravelMode.ON_INTERSECTION_PATH) {
-            executeOnIntersectionPath(v, action);
-        } else {
-            executeOnSegment(v, action);
-        }
-    }
-
-    private void executeOnSegment(Vehicle v, Action action) {
-        switch (action) {
-            case MOVE_FORWARD  -> v.advanceOnSegment();
-            case ACCELERATE    -> v.accelerate();
-            case SLOW_DOWN     -> v.slowDown();
-            case STOP          -> v.stop();
-            case CHANGE_LANE   -> v.changeLane();
-            case OVERTAKE      -> { v.accelerate(); v.changeLane(); }
-            case TURN_LEFT     -> v.setPlannedExit(PlannedExit.LEFT);
-            case TURN_RIGHT    -> v.setPlannedExit(PlannedExit.RIGHT);
-            case U_TURN        -> v.setPlannedExit(PlannedExit.LEFT);
-            // RANDOM: driver gán PlannedExit.RANDOM trực tiếp qua setPlannedExit
-            case HONK          -> v.honk();
-            default            -> v.advanceOnSegment();
-        }
-    }
-
-    private void executeOnIntersectionPath(Vehicle v, Action action) {
-        switch (action) {
-            case MOVE_FORWARD  -> pathFollower.advance(v);
-            case ACCELERATE    -> v.accelerate();
-            case SLOW_DOWN     -> v.slowDown();
-            case STOP          -> v.stop();
-            case HONK          -> v.honk();
-            default            -> pathFollower.advance(v);
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // HELPER: Đèn giao thông
-    // ═══════════════════════════════════════════════════════════
-
-    /**
-     * Lấy trạng thái đèn hiện tại liên quan đến xe.
-     *
-     * Hiện tại: dùng đèn đầu tiên trong danh sách làm placeholder.
-     *
-     * TODO (khi hệ thống đèn hoàn chỉnh): tìm đèn gần nhất theo
-     * hướng di chuyển của xe, dùng intersection sắp tới của xe.
-     * Gợi ý: findUpcomingIntersection() → lấy đèn của intersection đó.
-     */
     private TrafficLightState getCurrentLightState(Vehicle subject) {
         if (lights.isEmpty()) return TrafficLightState.GREEN;
+        // Tìm đèn giao thông gắn với intersection sắp tới (nếu có)
+        Intersection upcoming = findUpcomingIntersection(subject, subject.getPosition());
+        if (upcoming != null) {
+            // Giả sử mỗi intersection có thể có đèn riêng – ở đây đơn giản trả về đèn đầu tiên
+            // Trong hệ thống hoàn chỉnh, bạn sẽ map intersection -> TrafficLight
+        }
         return lights.get(0).getCurrentState();
     }
 }
