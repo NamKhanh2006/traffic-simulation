@@ -265,16 +265,14 @@ public class TrafficController {
     // Xử lý một xe: quyết định → kiểm tra → thực thi (hoặc fallback)
     // ═══════════════════════════════════════════════════════════════
 
-    private void processVehicle(Vehicle v, RoadContext ctx) {
+    private void processVehicle(Vehicle v, RoadContext ctx, double deltaTime) {
         Action proposed = v.getBehavior().decideAction(v, ctx);
-
         if (isVehicleAllowed(v, proposed, ctx)) {
-            executeAction(v, proposed);
+            executeAction(v, proposed, deltaTime);
         } else {
             Action fallback = v.getBehavior().handleRejection(v, ctx, proposed);
-            executeAction(v, fallback);
+            executeAction(v, fallback, deltaTime);
         }
-
         // Xử lý vào/ra giao lộ sau khi di chuyển
         tryEnterIntersection(v);
         tryExitIntersection(v);
@@ -304,11 +302,11 @@ public class TrafficController {
     // Thực thi action (tách biệt theo TravelMode)
     // ═══════════════════════════════════════════════════════════════
 
-    private void executeAction(Vehicle v, Action action) {
+    private void executeAction(Vehicle v, Action action, double deltaTime) {
         if (v.getTravelMode() == TravelMode.ON_INTERSECTION_PATH) {
-            executeOnIntersectionPath(v, action);
+            executeOnIntersectionPath(v, action, deltaTime);
         } else {
-            executeOnSegment(v, action);
+            executeOnSegment(v, action, deltaTime);
         }
     }
 
