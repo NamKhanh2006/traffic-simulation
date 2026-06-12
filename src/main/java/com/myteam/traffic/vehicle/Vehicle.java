@@ -293,5 +293,23 @@ public abstract class Vehicle {
     public void setCurrentIntersection(Intersection inter) {
         this.currentIntersection = inter;
     }
+    
+    // =========================================================
+    // Phương thức hỗ trợ IDM và MOBIL
+    // =========================================================
+
+    public double getMaxAcceleration() {
+        // Giá trị mặc định: 2.0 m/s², có thể override cho từng loại xe
+        return 2.0;
+    }
+
+    public double getComfortableDeceleration() {
+        // Giá trị mặc định: 3.0 m/s²
+        return 3.0;
+    }
+
+    public void slowDown(double delta) {
+        setSpeed(Math.max(0, getSpeed() - delta));
+    }
 
 }
