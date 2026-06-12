@@ -12,6 +12,6 @@ public class Ambulance extends EmergencyVehicle {
         
         this.setWidth(4.5);
         this.setHeight(2.2);
-        this.setType(VehicleType.EMERGENCY);
+        this.setType(VehicleType.AMBULANCE);
     }
 }

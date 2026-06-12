@@ -146,7 +146,7 @@ public class MarkingRule implements TrafficRule {
             case CAR       -> Lane.VehicleCategory.CAR;
             case MOTORBIKE -> Lane.VehicleCategory.MOTORBIKE;
             case BICYCLE   -> Lane.VehicleCategory.BICYCLE;
-            case EMERGENCY -> Lane.VehicleCategory.EMERGENCY;
+            case AMBULANCE, FIRETRUCK -> Lane.VehicleCategory.EMERGENCY;
             default        -> Lane.VehicleCategory.CAR;
         };
     }

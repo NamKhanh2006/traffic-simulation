@@ -104,7 +104,7 @@ public class TrafficController {
             case CAR: return new Car(startPos, startDir, behavior);
             case MOTORBIKE: return new Motorbike(startPos, startDir, behavior);
             case BICYCLE: return new Bicycle(startPos, startDir, behavior);
-            case EMERGENCY: return new Ambulance(startPos, startDir, behavior);
+            case AMBULANCE: return new Ambulance(startPos, startDir, behavior);
             default: return new Car(startPos, startDir, behavior);
         }
     }

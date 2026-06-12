@@ -12,7 +12,7 @@ public class FireTruck extends EmergencyVehicle {
         
         this.setWidth(6.0);
         this.setHeight(2.5);
-        this.setType(VehicleType.EMERGENCY);
+        this.setType(VehicleType.FIRETRUCK);
         this.setMaxSpeed(70.0); // Chậm do cứu thương do nặng
     }
 
