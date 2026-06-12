@@ -80,20 +80,30 @@ public final class LaneChange {
      * @param isEmergency     If vehicle is in emergency mode
      * @return true if lane change is physically allowed
      */
-    public static boolean isLaneChangePhysicallyPossible(
+        public static boolean isLaneChangePhysicallyPossible(
         Lane currentLane,
         int targetLaneIndex,
         VehicleType vehicleType,
         boolean isEmergency
     ) {
         int currentIndex = currentLane.getIndex();
-        
+        Lane.VehicleCategory cat = toVehicleCategory(vehicleType);
         if (targetLaneIndex == currentIndex - 1) {
-            return currentLane.canCrossLeft(vehicleType.toVehicleCategory(), isEmergency);
+            return currentLane.canCrossLeft(cat, isEmergency);
         } else if (targetLaneIndex == currentIndex + 1) {
-            return currentLane.canCrossRight(vehicleType.toVehicleCategory(), isEmergency);
+            return currentLane.canCrossRight(cat, isEmergency);
         }
-        
         return false;
+    }
+
+    private static Lane.VehicleCategory toVehicleCategory(VehicleType type) {
+        if (type == null) return Lane.VehicleCategory.CAR;
+        return switch (type) {
+            case CAR -> Lane.VehicleCategory.CAR;
+            case MOTORBIKE -> Lane.VehicleCategory.MOTORBIKE;
+            case BICYCLE -> Lane.VehicleCategory.BICYCLE;
+            case AMBULANCE, FIRETRUCK -> Lane.VehicleCategory.EMERGENCY;
+            default -> Lane.VehicleCategory.CAR;
+        };
     }
 }
