@@ -58,7 +58,7 @@ public class TrafficController {
     private final List<TrafficRule> globalRules = new ArrayList<>();
 
     // ── Factory để tạo xe (cho phép mở rộng) ──────────────────────
-    private Supplier<Vehicle> vehicleFactory;
+    private Supplier<Vehicle> vehicleFactory = () -> new Car(new Position(0,0), new com.myteam.traffic.model.geometry.Direction(0), null);
 
     // ═══════════════════════════════════════════════════════════════
     // Constructor
@@ -100,11 +100,13 @@ public class TrafficController {
     private Vehicle createVehicleByType(VehicleType type, DriverBehavior behavior) {
         Position startPos = new Position(0, 0);
         Direction startDir = new Direction(0);
+        com.myteam.traffic.model.geometry.Direction dir = new com.myteam.traffic.model.geometry.Direction(0);
         switch (type) {
             case CAR: return new Car(startPos, startDir, behavior);
             case MOTORBIKE: return new Motorbike(startPos, startDir, behavior);
             case BICYCLE: return new Bicycle(startPos, startDir, behavior);
             case AMBULANCE: return new Ambulance(startPos, startDir, behavior);
+            case FIRETRUCK: return new FireTruck(startPos, startDir, behavior);
             default: return new Car(startPos, startDir, behavior);
         }
     }
@@ -133,7 +135,7 @@ public class TrafficController {
     // TICK – vòng lặp chính
     // ═══════════════════════════════════════════════════════════════
 
-    public void tick() {
+    public void tick(double deltaTime) {
         // 1. Loại bỏ xe đã hoàn thành hành trình (không còn đường phía trước)
         vehicles.removeIf(v ->
                 v.getTravelMode() == TravelMode.ON_SEGMENT &&
@@ -152,7 +154,7 @@ public class TrafficController {
         // 4. Xử lý từng xe
         for (Vehicle v : vehicles) {
             RoadContext ctx = buildContext(v, snapshot);
-            processVehicle(v, ctx);
+            processVehicle(v, ctx, deltaTime);
         }
     }
 
@@ -310,17 +312,17 @@ public class TrafficController {
         }
     }
 
-    private void executeOnSegment(Vehicle v, Action action) {
+    private void executeOnSegment(Vehicle v, Action action, double deltaTime) {
         switch (action) {
             case MOVE_FORWARD:
-                v.setSegmentProgress(v.getSegmentProgress() + v.getSpeed() / v.getCurrentSegment().getLength());
+                v.setSegmentProgress(v.getSegmentProgress() + v.getSpeed() * deltaTime / v.getCurrentSegment().getLength());
                 v.syncPositionFromSegment();
                 break;
             case ACCELERATE:
-                v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + 2.0));
+                v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + 5.0 * deltaTime));
                 break;
             case SLOW_DOWN:
-                v.setSpeed(Math.max(0, v.getSpeed() - 2.0));
+                v.setSpeed(Math.max(0, v.getSpeed() - 8.0 * deltaTime));
                 break;
             case STOP:
                 v.setSpeed(0);
@@ -334,7 +336,7 @@ public class TrafficController {
                 break;
             case OVERTAKE:
                 // Vượt: tăng tốc + chuyển làn trái
-                v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + 3.0));
+                v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + 5.0 * deltaTime))
                 int leftIdx = v.getCurrentLane().getIndex() - 1;
                 if (leftIdx >= 0) {
                     v.changeLaneIndex(leftIdx);
@@ -378,25 +380,30 @@ public class TrafficController {
                 v.honk();
                 break;
             default:
-                v.setSegmentProgress(v.getSegmentProgress() + v.getSpeed() / v.getCurrentSegment().getLength());
+                v.setSegmentProgress(v.getSegmentProgress() + v.getSpeed() * deltaTim) / v.getCurrentSegment().getLength());
                 v.syncPositionFromSegment();
         }
         // Đảm bảo tiến độ không vượt quá 1
         if (v.getSegmentProgress() > 1.0) v.setSegmentProgress(1.0);
     }
 
-    private void executeOnIntersectionPath(Vehicle v, Action action) {
+     private void executeOnIntersectionPath(Vehicle v, Action action, double deltaTime) {
+        IntersectionPath path = v.getActivePath();
+        if (path == null) return;
         switch (action) {
             case MOVE_FORWARD:
-                pathFollower.advance(v);
+                v.setPathProgress(v.getPathProgress() + v.getSpeed() * deltaTime);
+                pathFollower.syncPose(v, path, v.getPathProgress());
                 break;
             case ACCELERATE:
-                v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + 2.0));
-                pathFollower.advance(v);
+                v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + 5.0 * deltaTime));
+                v.setPathProgress(v.getPathProgress() + v.getSpeed() * deltaTime);
+                pathFollower.syncPose(v, path, v.getPathProgress());
                 break;
             case SLOW_DOWN:
-                v.setSpeed(Math.max(0, v.getSpeed() - 2.0));
-                pathFollower.advance(v);
+                v.setSpeed(Math.max(0, v.getSpeed() - 8.0 * deltaTime));
+                v.setPathProgress(v.getPathProgress() + v.getSpeed() * deltaTime);
+                pathFollower.syncPose(v, path, v.getPathProgress());
                 break;
             case STOP:
                 v.setSpeed(0);
@@ -405,7 +412,8 @@ public class TrafficController {
                 v.honk();
                 break;
             default:
-                pathFollower.advance(v);
+                v.setPathProgress(v.getPathProgress() + v.getSpeed() * deltaTime);
+                pathFollower.syncPose(v, path, v.getPathProgress());
         }
     }
 
@@ -425,8 +433,6 @@ public class TrafficController {
 
         IntersectionPath path = intersectionNavigator.buildPath(v);
         if (path == null) {
-            System.out.printf("[CONTROLLER] Không tạo được path cho %s (exit=%s)%n",
-                    v.getType(), v.getPlannedExit());
             v.clearPlannedExit();
             return;
         }
