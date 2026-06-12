@@ -198,4 +198,3 @@ public final class Lane {
                 allowedVehicles, allowedMovements);
     }
 }
-

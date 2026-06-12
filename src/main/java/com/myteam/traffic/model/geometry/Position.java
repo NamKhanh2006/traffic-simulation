@@ -47,5 +47,31 @@ public class Position {
         return (dx * Math.cos(rad) + dy * Math.sin(rad)) > 0;
     }
     
+    // Thêm vào class Position (com.myteam.traffic.model.geometry.Position)
+
+    /**
+     * Tính khoảng cách dọc theo hướng {@code direction} từ điểm này đến điểm {@code other}.
+     * Khác với {@link #distanceTo(Position)} (khoảng cách Euclid), method này chỉ tính
+     * hình chiếu của vector (this → other) lên vector đơn vị của direction.
+     * 
+     * <p>Hữu ích để tính khoảng cách giữa hai xe cùng chạy trên một làn đường thẳng,
+     * vì nó bỏ qua khoảng cách lệch sang ngang (do xe có thể hơi lệch làn).</p>
+     * 
+     * <pre>
+     * Ví dụ: this = (0,0), other = (10, 1), direction = EAST (0°)
+     *   → distanceAlongDirection = 10.0 (bỏ qua độ lệch 1 đơn vị theo Y)
+     * </pre>
+     *
+     * @param direction Hướng di chuyển (đã được chuẩn hóa, không cần unit vector)
+     * @param other Điểm đích
+     * @return Khoảng cách dọc theo hướng (có thể âm nếu other ở phía sau)
+     */
+    public double distanceAlongDirection(Direction direction, Position other) {
+        double dx = other.x - this.x;
+        double dy = other.y - this.y;
+        double rad = direction.toRadians();
+        // Dot product với unit vector của direction
+        return dx * Math.cos(rad) + dy * Math.sin(rad);
+    }
     
 }

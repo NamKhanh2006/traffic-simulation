@@ -118,7 +118,7 @@ public class MarkingRule implements TrafficRule {
      * Với xe thường (isEmergency = false), isOnDuty = false.
      */
     private boolean canCross(Lane lane, Vehicle v, Action a) {
-        Lane.VehicleCategory cat    = toVehicleCategory(v.getType());
+        Lane.VehicleCategory cat = toVehicleCategory(v.getType());
         boolean              onDuty = v.isEmergency();
 
         if (a == Action.U_TURN) {

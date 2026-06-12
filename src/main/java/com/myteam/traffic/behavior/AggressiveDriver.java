@@ -1,7 +1,6 @@
 // FuzzyAggressiveDriver.java
 package com.myteam.traffic.behavior;
 
-import com.myteam.traffic.behavior.common.Action;
 import com.myteam.traffic.behavior.common.*;
 import com.myteam.traffic.context.RoadContext;
 import com.myteam.traffic.vehicle.Vehicle;
@@ -15,7 +14,8 @@ public class AggressiveDriver implements DriverBehavior {
         return Math.max(0, Math.min(1, (3.0 - gap) / 3.0)); 
     }
     private double close(double gap) { 
-        return Math.max(0, Math.min(1, (gap - 1.0) / 4.0, (8.0 - gap) / 5.0)); 
+        double tmp1 = Math.min((gap - 1.0) / 4.0, (8.0 - gap) / 5.0);
+        return Math.max(0, Math.min(1, tmp1)); 
     }
     private double far(double gap) { 
         return Math.max(0, Math.min(1, (gap - 5.0) / 10.0)); 

@@ -10,5 +10,6 @@ public enum PlannedExit {
     RANDOM,
     STRAIGHT,
     LEFT,
-    RIGHT
+    RIGHT,
+    U_TURN
 }

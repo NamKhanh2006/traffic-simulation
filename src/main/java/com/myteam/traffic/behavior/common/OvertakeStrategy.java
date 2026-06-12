@@ -2,7 +2,6 @@ package com.myteam.traffic.behavior.common;
 
 import com.myteam.traffic.model.infrastructure.Lane;
 import com.myteam.traffic.vehicle.Vehicle;
-import com.myteam.traffic.vehicle.VehicleType;
 
 /**
  * Utility class that encapsulates overtake manoeuvre logic with safety checks.
@@ -70,9 +69,9 @@ public class OvertakeStrategy {
         int targetIndex = targetLane.getIndex();
         
         if (targetIndex == currentIndex - 1) {
-            return currentLane.canCrossLeft(v.getType(), v.isEmergency());
+            return currentLane.canCrossLeft(v.getType().toVehicleCategory(), v.isEmergency());
         } else if (targetIndex == currentIndex + 1) {
-            return currentLane.canCrossRight(v.getType(), v.isEmergency());
+            return currentLane.canCrossRight(v.getType().toVehicleCategory(), v.isEmergency());
         }
         
         return false;

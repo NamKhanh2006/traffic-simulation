@@ -1,6 +1,7 @@
 package com.myteam.traffic.controller;
 
 import com.myteam.traffic.behavior.common.Action;
+import com.myteam.traffic.behavior.common.Turn;
 import com.myteam.traffic.behavior.DriverBehavior;
 import com.myteam.traffic.context.RoadContext;
 import com.myteam.traffic.light.TrafficLight;
@@ -340,13 +341,38 @@ public class TrafficController {
                 }
                 break;
             case TURN_LEFT:
+                /*
                 v.setPlannedExit(PlannedExit.LEFT);
+                break;
+                */
+               if (Turn.executeTurn(v, PlannedExit.LEFT)) {
+                    // thành công, không cần làm gì thêm
+                } else {
+                // không được phép rẽ, có thể fallback về MOVE_FORWARD
+                    v.setPlannedExit(PlannedExit.NONE);
+                }   
                 break;
             case TURN_RIGHT:
+                /*
                 v.setPlannedExit(PlannedExit.RIGHT);
                 break;
+                */
+                if (Turn.executeTurn(v, PlannedExit.RIGHT)) {
+                    // thành công, không cần làm gì thêm
+                } else {
+                    // không được phép rẽ, có thể fallback về MOVE_FORWARD
+                    v.setPlannedExit(PlannedExit.NONE);
+                }
+                break;
             case U_TURN:
-                v.setPlannedExit(PlannedExit.LEFT);
+                /*v.setPlannedExit(PlannedExit.LEFT);
+                break;*/
+                if (Turn.executeTurn(v, PlannedExit.LEFT)) {
+                    // thành công, không cần làm gì thêm
+                } else {
+                    // không được phép rẽ, có thể fallback về MOVE_FORWARD
+                    v.setPlannedExit(PlannedExit.NONE);
+                }
                 break;
             case HONK:
                 v.honk();

@@ -1,7 +1,8 @@
 package com.myteam.traffic.behavior.common;
 
 import com.myteam.traffic.vehicle.VehicleType;
-import com.myteam.traffic.model.infrastructure.Lane;;
+import com.myteam.traffic.model.infrastructure.Lane;
+import com.myteam.traffic.rule.MarkingRule;
 
 /**
  * Utility class for lane-change manoeuvres with MOBIL safety check.
@@ -88,9 +89,9 @@ public final class LaneChange {
         int currentIndex = currentLane.getIndex();
         
         if (targetLaneIndex == currentIndex - 1) {
-            return currentLane.canCrossLeft(vehicleType, isEmergency);
+            return currentLane.canCrossLeft(vehicleType.toVehicleCategory(), isEmergency);
         } else if (targetLaneIndex == currentIndex + 1) {
-            return currentLane.canCrossRight(vehicleType, isEmergency);
+            return currentLane.canCrossRight(vehicleType.toVehicleCategory(), isEmergency);
         }
         
         return false;

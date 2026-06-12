@@ -176,6 +176,11 @@ public class IntersectionNavigator {
             case LEFT -> sorted.get((entryIdx + 1) % n);
             case RIGHT -> sorted.get((entryIdx - 1 + n) % n);
             case STRAIGHT -> pickOppositeArm(validExits, entry, cx, cy);
+            case U_TURN -> {
+                // Quay đầu: thường là quay 180°, có thể chọn nhánh đối diện hoặc
+                // nhánh bên trái nếu giao lộ cho phép
+            yield pickOppositeArm(validExits, entry, cx, cy);
+            }
             default -> null;
         };
 

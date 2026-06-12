@@ -290,6 +290,123 @@ public class RoadContext {
         return hasFrontVehicle();
     }
 
+    // Thêm vào class RoadContext, sau các convenience methods (khoảng dòng 200-250)
+
+    // =========================================================
+    // Tìm xe phía trước gần nhất
+    // =========================================================
+
+    /**
+     * Tìm phương tiện gần nhất ở phía trước subject trên cùng làn đường.
+     * 
+     * <p>Luồng xử lý:
+     * <ol>
+     *   <li>Nếu subject đang ở chế độ {@link TravelMode#ON_SEGMENT}: tìm xe cùng {@code currentSegment}
+     *       và cùng {@code currentLane}, ở phía trước subject theo hướng di chuyển, có khoảng cách
+     *       dương nhỏ nhất.</li>
+     *   <li>Nếu subject đang ở chế độ {@link TravelMode#ON_INTERSECTION_PATH}: tìm xe cùng
+     *       {@code currentIntersection} và cùng {@code activePath}, ở phía trước theo chiều cung tròn.</li>
+     *   <li>Trả về {@code null} nếu không tìm thấy xe nào phía trước.</li>
+     * </ol>
+     * 
+     * <p><b>Lưu ý:</b> Method này dùng {@code positionSnapshot} để đảm bảo tính nhất quán
+     * trong cùng một tick, không gọi {@code vehicle.getPosition()} trực tiếp.
+     *
+     * @return Vehicle gần nhất phía trước, hoặc null nếu không có
+     */
+    public Vehicle getNearestFrontVehicle() {
+        if (subject.getTravelMode() == TravelMode.ON_SEGMENT) {
+            return findNearestFrontOnSegment();
+        } else if (subject.getTravelMode() == TravelMode.ON_INTERSECTION_PATH) {
+            return findNearestFrontOnPath();
+        }
+        return null;
+    }
+
+    /**
+     * Tìm xe phía trước gần nhất khi subject đang chạy trên RoadSegment.
+     */
+    private Vehicle findNearestFrontOnSegment() {
+        RoadSegment seg = subject.getCurrentSegment();
+        Lane lane = subject.getCurrentLane();
+        if (seg == null || lane == null) {
+            return null;
+        }
+
+        Position myPos = getSubjectPosition();
+        Direction myDir = subject.getDirection();
+        int myLaneIndex = lane.getIndex();
+
+        Vehicle nearest = null;
+        double minGap = Double.MAX_VALUE;
+
+        for (Vehicle other : nearbyVehicles) {
+            if (other == subject) continue;
+            
+            // Chỉ xét xe cùng segment và cùng làn
+            if (other.getCurrentSegment() != seg) continue;
+            if (other.getCurrentLane() == null) continue;
+            if (other.getCurrentLane().getIndex() != myLaneIndex) continue;
+
+            Position otherPos = positionSnapshot.getOrDefault(other, other.getPosition());
+            
+            // Kiểm tra xe có ở phía trước không (dùng dot product)
+            if (!myPos.isAheadInDirection(myDir, otherPos)) continue;
+
+            // Tính khoảng cách dọc theo hướng di chuyển (không phải Euclidean)
+            double gap = myPos.distanceAlongDirection(myDir, otherPos);
+            if (gap > 0 && gap < minGap) {
+                minGap = gap;
+                nearest = other;
+            }
+        }
+
+        return nearest;
+    }
+
+    /**
+     * Tìm xe phía trước gần nhất khi subject đang chạy trên IntersectionPath (cung tròn qua giao lộ).
+     */
+    private Vehicle findNearestFrontOnPath() {
+        IntersectionPath path = subject.getActivePath();
+        if (path == null || subject.getCurrentIntersection() == null) {
+            return null;
+        }
+
+        double myProgress = subject.getPathProgress();
+        double pathLength = path.getPathLength();
+        double myAngle = angleAroundCenter(getSubjectPosition(), path.getCenterX(), path.getCenterY());
+        double sweep = path.getSweepRad();
+
+        Vehicle nearest = null;
+        double minProgressGap = Double.MAX_VALUE;
+
+        for (Vehicle other : nearbyVehicles) {
+            if (other == subject) continue;
+            
+            // Chỉ xét xe cùng intersection và cùng path
+            if (other.getCurrentIntersection() != subject.getCurrentIntersection()) continue;
+            if (other.getActivePath() == null) continue;
+            if (other.getActivePath() != path) continue; // cùng quỹ đạo mới tính
+
+            Position otherPos = positionSnapshot.getOrDefault(other, other.getPosition());
+            double otherAngle = angleAroundCenter(otherPos, path.getCenterX(), path.getCenterY());
+            
+            // Kiểm tra có ở phía trước trên cung không
+            if (!isAheadOnArc(myAngle, otherAngle, sweep)) continue;
+
+            double otherProgress = other.getPathProgress();
+            double gap = otherProgress - myProgress;
+            
+            if (gap > 0 && gap < minProgressGap) {
+                minProgressGap = gap;
+                nearest = other;
+            }
+        }
+
+        return nearest;
+    }
+
     // =========================================================
     // Logic tính khoảng cách — dùng bởi DistanceRule
     // =========================================================

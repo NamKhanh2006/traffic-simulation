@@ -22,6 +22,10 @@ public final class Turn {
      * @return true if turn is valid and executed, false otherwise
      */
     public static boolean executeTurn(Vehicle vehicle, PlannedExit plannedExit) {
+        // 0. Validate planned Exit
+        if (plannedExit == null || plannedExit == PlannedExit.NONE) {
+            return false;
+        }
         // 1. Validate vehicle state
         if (vehicle.getTravelMode() != TravelMode.ON_SEGMENT) {
             return false; // Only allow turning when on segment
@@ -36,7 +40,7 @@ public final class Turn {
         Lane.Movement requiredMovement = mapToMovement(plannedExit);
         if (!currentLane.allowsMovement(
             requiredMovement, 
-            vehicle.getType(), 
+            vehicle.getType().toVehicleCategory(), 
             vehicle.isEmergency())
         ) {
             return false;
@@ -52,6 +56,7 @@ public final class Turn {
             case LEFT -> Lane.Movement.LEFT;
             case RIGHT -> Lane.Movement.RIGHT;
             case STRAIGHT -> Lane.Movement.STRAIGHT;
+            case U_TURN -> Lane.Movement.U_TURN;
             case RANDOM -> Lane.Movement.STRAIGHT; // Default mapping
             default -> null;
         };
