@@ -45,7 +45,7 @@ public class ActionRule implements TrafficRule {
 
     @Override
     public int getPriority() {
-    	return 20;
+    	return 70;
     }
     
     @Override
