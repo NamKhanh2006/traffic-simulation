@@ -23,7 +23,7 @@ public class DistanceRule implements TrafficRule {
 
     @Override
     public int getPriority() {
-        return 50;
+        return 90;
     }
 
     @Override
