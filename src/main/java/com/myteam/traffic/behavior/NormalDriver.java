@@ -1,6 +1,8 @@
+// NormalDriver.java – phiên bản sửa
 package com.myteam.traffic.behavior;
 
 import com.myteam.traffic.behavior.common.Action;
+import com.myteam.traffic.behavior.common.DistanceKeeping;
 import com.myteam.traffic.context.RoadContext;
 import com.myteam.traffic.vehicle.TravelMode;
 import com.myteam.traffic.vehicle.Vehicle;
@@ -9,49 +11,44 @@ public class NormalDriver implements DriverBehavior {
 
     @Override
     public Action decideAction(Vehicle v, RoadContext context) {
-
-        // 1. TRONG GIAO LỘ: Không bao giờ kẹt!
+        // 1. Xử lý khi đang trong giao lộ
         if (v.getTravelMode() == TravelMode.ON_INTERSECTION_PATH) {
-            for (Vehicle other : context.getNearbyVehicles()) {
-                if (other != v && other.getTravelMode() == TravelMode.ON_INTERSECTION_PATH) {
-                    double dist = v.getPosition().distanceTo(other.getPosition());
-
-                    // Nếu 2 xe quá gần nhau (< 30m)
-                    if (dist < 30.0) {
-                        // AI ĐI ÍT HƠN THÌ PHẢI NHƯỜNG (PHANH LẠI)
-                        // Xe nào đã đi vào sâu hơn (pathProgress lớn hơn) thì được phóng tiếp
-                        if (v.getPathProgress() < other.getPathProgress()) {
-                            return Action.STOP;
-                        }
-                    }
-                }
+            Vehicle front = context.getNearestFrontVehicle();
+            // Nếu có xe phía trước trên cùng quỹ đạo và TTC nguy hiểm → dừng
+            if (front != null && DistanceKeeping.isImminentCollision(v, front)) {
+                return Action.STOP;
             }
-            // Không có ai cản trở thì cắm đầu chạy thoát khỏi giao lộ
+            // Kiểm tra khoảng cách an toàn theo TTC
+            if (front != null && DistanceKeeping.timeToCollision(v, front) < DistanceKeeping.SAFE_TTC) {
+                return Action.SLOW_DOWN;
+            }
+            // Không có cản trở → tăng tốc để thoát giao lộ
             return Action.ACCELERATE;
         }
 
-        // 2. TRÊN ĐƯỜNG THẲNG
+        // 2. Xử lý trên đường thẳng
         Vehicle front = context.getNearestFrontVehicle();
 
-        if (front != null) {
-            double dist = v.getPosition().distanceTo(front.getPosition());
-
-            if (dist < 35.0) return Action.STOP; // Sắp đâm thì phanh
-
-            // Lách lane nếu xe trước đi chậm (điều kiện an toàn do TrafficController lo)
-            if (dist < 60.0 && front.getSpeed() < v.getSpeed()) {
-                return Action.OVERTAKE;
-            }
-
-            if (dist < 80.0) return Action.SLOW_DOWN; // Giảm tốc từ xa
+        // Dừng khẩn cấp nếu TTC quá nhỏ
+        if (front != null && DistanceKeeping.isImminentCollision(v, front)) {
+            return Action.STOP;
+        }
+        // Giảm tốc nếu TTC không an toàn
+        if (front != null && DistanceKeeping.timeToCollision(v, front) < DistanceKeeping.SAFE_TTC) {
+            return Action.SLOW_DOWN;
+        }
+        // Có xe phía trước nhưng đủ an toàn, và xe trước chậm hơn → thử vượt
+        if (front != null && front.getSpeed() < v.getSpeed() && 
+            DistanceKeeping.timeToCollision(v, front) > DistanceKeeping.SAFE_TTC + 1.0) {
+            return Action.OVERTAKE;
         }
 
-        // 3. Đèn đỏ (Chỉ dừng khi sắp vào giao lộ)
+        // 3. Đèn đỏ (chỉ dừng khi sắp vào giao lộ)
         if (context.hasRedLightAhead()) {
             return Action.STOP;
         }
 
-        // 4. Đường trống -> Đạp ga
+        // 4. Tăng tốc nếu chưa đạt maxSpeed
         if (v.getSpeed() < v.getMaxSpeed()) {
             return Action.ACCELERATE;
         }
