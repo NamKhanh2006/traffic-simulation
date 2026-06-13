@@ -79,7 +79,7 @@ public class SignalRule implements TrafficRule {
 
     @Override
     public int getPriority() {
-        return 45;
+        return 100;
     }
 
     // =========================================================
