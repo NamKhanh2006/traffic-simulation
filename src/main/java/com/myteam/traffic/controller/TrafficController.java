@@ -226,10 +226,19 @@ public class TrafficController {
             }
             case CHANGE_LANE -> {
                 if (v.getLaneChangeProgress() >= 1.0) {
-                    int newIdx = v.getCurrentLane().getIndex() + 1;
-                    if (newIdx < seg.getLanes().size() &&
-                            seg.getLanes().get(newIdx).getDirection() == v.getCurrentLane().getDirection() &&
-                            isLaneSafeToEnter(v, seg, newIdx, 45.0)) {
+                    int currentIdx = v.getCurrentLane().getIndex();
+                    int newIdx = -1;
+                    // Thử sang phải trước
+                    if (currentIdx + 1 < seg.getLanes().size() &&
+                            seg.getLanes().get(currentIdx + 1).getDirection() == v.getCurrentLane().getDirection()) {
+                        newIdx = currentIdx + 1;
+                    }
+                    // Nếu không thể sang phải, thử sang trái
+                    else if (currentIdx - 1 >= 0 &&
+                            seg.getLanes().get(currentIdx - 1).getDirection() == v.getCurrentLane().getDirection()) {
+                        newIdx = currentIdx - 1;
+                    }
+                    if (newIdx != -1 && isLaneSafeToEnter(v, seg, newIdx, 45.0)) {
                         v.changeLaneIndex(newIdx);
                     }
                 }
