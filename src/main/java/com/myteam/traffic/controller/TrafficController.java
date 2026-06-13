@@ -334,7 +334,7 @@ public class TrafficController {
                 break;
             case OVERTAKE:
                 // Vượt: tăng tốc + chuyển làn trái
-                v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + 5.0 * deltaTime))
+                v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + 5.0 * deltaTime));
                 int leftIdx = v.getCurrentLane().getIndex() - 1;
                 if (leftIdx >= 0) {
                     v.changeLaneIndex(leftIdx);
@@ -378,7 +378,7 @@ public class TrafficController {
                 v.honk();
                 break;
             default:
-                v.setSegmentProgress(v.getSegmentProgress() + v.getSpeed() * deltaTim) / v.getCurrentSegment().getLength());
+                v.setSegmentProgress((v.getSegmentProgress() + v.getSpeed() * deltaTime) / v.getCurrentSegment().getLength());
                 v.syncPositionFromSegment();
         }
         // Đảm bảo tiến độ không vượt quá 1

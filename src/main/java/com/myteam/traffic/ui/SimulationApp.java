@@ -200,7 +200,7 @@ public class SimulationApp extends Application {
         root.setTop(header);
         root.setCenter(canvasHolder);
 
-        Scene scene = new Scene(root, 1280, 850);
+        Scene scene = new Scene(root, 1280, 720);
         scene.getStylesheets().add("data:text/css," +
                 ".check-box .text{-fx-fill:#c8d0e8;}" +
                 ".label{-fx-text-fill:#c8d0e8;}" +
@@ -213,6 +213,8 @@ public class SimulationApp extends Application {
 
         stage.setTitle("Traffic Builder — Trình Dựng Lưới Giao Thông");
         stage.setScene(scene);
+        // ÉP BUỘC BẬT: Đảm bảo người dùng có thể dùng chuột kéo góc để co giãn cửa sổ
+        //stage.setResizable(true);
         stage.show();
         view.resetView();
     }
