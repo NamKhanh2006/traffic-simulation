@@ -84,7 +84,7 @@ public class MarkingRule implements TrafficRule {
 
     @Override
     public int getPriority() {
-        return 40;
+        return 80;
     }
 
     // =========================================================
