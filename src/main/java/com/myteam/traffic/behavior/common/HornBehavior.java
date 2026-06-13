@@ -1,14 +1,24 @@
 package com.myteam.traffic.behavior.common;
 
-import traffic.common.Action;
-import traffic.model.context.RoadContext;
-import traffic.model.vehicle.Vehicle;
+import com.myteam.traffic.vehicle.Vehicle;
 
+/**
+ * Utility class encapsulating honking logic.
+ *
+ * Separating horn behaviour from the driver decision allows different
+ * driver types (Normal, Aggressive, Emergency) to reuse the same honk
+ * call while keeping their decision trees clean.
+ */
 public class HornBehavior {
-    public static Action decide(Vehicle v, RoadContext c) {
-        if (c.getFrontVehicle() != null && Math.random() < 0.2) {
-            return Action.HONK;
-        }
-        return null;
+
+    private HornBehavior() { /* utility class – no instances */ }
+
+    /**
+     * Instruct the vehicle to sound its horn and log the event.
+     *
+     * @param v the vehicle that honks
+     */
+    public static void honk(Vehicle v) {
+        v.honk();
     }
 }

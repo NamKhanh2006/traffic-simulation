@@ -1,19 +1,136 @@
 package com.myteam.traffic.behavior.common;
 
-import traffic.common.Action;
-import traffic.model.context.RoadContext;
-import traffic.model.vehicle.Vehicle;
+import com.myteam.traffic.vehicle.Vehicle;
 
-
+/**
+ * Pure math utility class for safe following-distance logic with TTC and IDM.
+ * Follows Strategic Design Pattern - contains ONLY calculation logic.
+ */
 public class DistanceKeeping {
-    public static Action decide(Vehicle v, RoadContext c) {
-        if (c.getFrontVehicle() == null) return null;
+    private DistanceKeeping() {}
 
-        double dist = c.getFrontVehicle().getX() - v.getX();
+    // Ngưỡng an toàn theo thời gian (giây)
+    public static final double SAFE_TTC = 2.0;      // TTC an toàn
+    public static final double MIN_TTC = 1.0;       // Dưới ngưỡng này phải can thiệp
 
-        if (dist < 5) return Action.SLOW_DOWN;
-        if (dist > 10) return Action.ACCELERATE;
+    // IDM parameters
+    public static final double DEFAULT_MAX_ACCEL = 2.0;      // m/s²
+    public static final double DEFAULT_COMFORT_DECEL = 3.0;  // m/s²
+    public static final double MIN_GAP = 2.0;                // m
+    public static final double DESIRED_TIME_HEADWAY = 1.5;   // s
+    
+    /**
+     * Tính Time-to-Collision giữa hai xe.
+     * @param currentSpeed Speed of subject vehicle (m/s)
+     * @param leaderSpeed Speed of front vehicle (m/s)
+     * @param gap Distance between vehicles (m)
+     * @return TTC (seconds), or POSITIVE_INFINITY if no collision course
+     */
+    public static double calculateTTC(
+        double currentSpeed, 
+        double leaderSpeed, 
+        double gap
+    ) {
+        double relSpeed = currentSpeed - leaderSpeed;
+        if (relSpeed <= 0) return Double.POSITIVE_INFINITY;
+        return gap / relSpeed;
+    }
 
-        return null;
+    /**
+     * Tính Time-to-Collision với xe phía trước.
+     * @return TTC (giây), hoặc POSITIVE_INFINITY nếu không có xe trước hoặc v_rel <= 0
+     */
+    public static double timeToCollision(Vehicle self, Vehicle front) {
+        if (front == null) return Double.POSITIVE_INFINITY;
+        double gap = self.getPosition().distanceTo(front.getPosition());
+        double relSpeed = self.getSpeed() - front.getSpeed();
+        if (relSpeed <= 0) return Double.POSITIVE_INFINITY; // không đuổi kịp
+        return gap / relSpeed;
+    }
+
+    public static double calculateTimeHeadway(
+        double currentSpeed, 
+        double gap
+    ) {
+        if (currentSpeed <= 0) return Double.POSITIVE_INFINITY;
+        return gap / currentSpeed;
+    }
+
+    /**
+     * Checks if immediate collision avoidance is needed.
+     * @param ttc Time-to-collision value
+     * @return true if collision is imminent
+     */
+    public static boolean isImminentCollision(double ttc) {
+        return ttc < MIN_TTC;
+    }
+
+    public static boolean isImminentCollision(Vehicle self, Vehicle front){
+        return timeToCollision(self, front) < MIN_TTC;
+    }
+
+    /**
+     * Checks if following distance is unsafe.
+     * @param timeHeadway Current time headway
+     * @return true if below safe threshold
+     */
+    public static boolean isHeadwayUnsafe(double timeHeadway) {
+        return timeHeadway < DESIRED_TIME_HEADWAY;
+    }
+
+    /**
+     * Intelligent Driver Model - calculates desired acceleration.
+     * 
+     * @param currentSpeed Subject vehicle speed (m/s)
+     * @param maxSpeed     Subject vehicle max speed (m/s)
+     * @param leaderSpeed  Front vehicle speed (m/s) (0 if no leader)
+     * @param gap          Distance to front vehicle (m)
+     * @param aMax         Maximum acceleration (m/s²)
+     * @param decel        Comfortable deceleration (m/s²)
+     * @return Recommended acceleration (can be negative)
+     */
+    public static double calculateIDMAcceleration(
+        double currentSpeed,
+        double maxSpeed,
+        double leaderSpeed,
+        double gap,
+        double aMax,
+        double decel
+    ) {
+        // Free road acceleration component
+        double freeComponent = 1 - Math.pow(currentSpeed / maxSpeed, 4);
+        
+        // Return free acceleration if no vehicle ahead
+        if (leaderSpeed < 0 || gap <= 0) {
+            return aMax * freeComponent;
+        }
+
+        double relSpeed = currentSpeed - leaderSpeed;
+        double sStar = MIN_GAP
+            + currentSpeed * DESIRED_TIME_HEADWAY
+            + (currentSpeed * relSpeed) / (2 * Math.sqrt(aMax * decel));
+        
+        double interactionComponent = Math.pow(sStar / Math.max(0.1, gap), 2);
+        
+        return aMax * (freeComponent - interactionComponent);
+    }
+
+    /**
+     * Simplified IDM with default parameters.
+     */
+    public static double calculateIDMAcceleration(
+        double currentSpeed,
+        double maxSpeed,
+        double leaderSpeed,
+        double gap
+    ) {
+        return calculateIDMAcceleration(
+            currentSpeed, 
+            maxSpeed, 
+            leaderSpeed, 
+            gap,
+            DEFAULT_MAX_ACCEL, 
+            DEFAULT_COMFORT_DECEL
+        );
     }
 }
