@@ -66,7 +66,7 @@ public class MediaTestApp extends Application {
         soundBox.setAlignment(Pos.CENTER);
 
         Button btnCar = new Button("Còi Ô tô");
-        btnCar.setOnAction(e -> SoundManager.playSound("car_honk.wav"));
+        btnCar.setOnAction(e -> SoundManager.playSound("car.mp3"));
 
         Button btnMotorbike = new Button("Còi Xe máy");
         btnMotorbike.setOnAction(e -> SoundManager.playSound("motorbike.mp3"));
