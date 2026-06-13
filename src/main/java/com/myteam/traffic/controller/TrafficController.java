@@ -311,6 +311,9 @@ public class TrafficController {
     }
 
     private void executeOnSegment(Vehicle v, Action action, double deltaTime) {
+         RoadSegment seg = v.getCurrentSegment();
+        if (seg == null) return;
+        double length = seg.getLength();
         switch (action) {
             case MOVE_FORWARD:
                 v.setSegmentProgress(v.getSegmentProgress() + v.getSpeed() * deltaTime / v.getCurrentSegment().getLength());
