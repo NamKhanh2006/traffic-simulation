@@ -59,4 +59,23 @@ public class EmergencyDriver implements DriverBehavior {
     public boolean isEmergency() {
         return true;
     }
+
+    // EmergencyDriver.java – bổ sung xử lý khi ở giao lộ
+    @Override
+    public Action decideAction(Vehicle v, RoadContext context) {
+        if (!v.isSirenOn()) return Action.HONK;
+    
+        if (v.getTravelMode() == TravelMode.ON_INTERSECTION_PATH) {
+            Vehicle front = context.getNearestFrontVehicle();
+            if (front != null && DistanceKeeping.isImminentCollision(v, front))
+                return Action.STOP;
+            return Action.ACCELERATE;
+        }
+    
+        Vehicle front = context.getNearestFrontVehicle();
+        if (DistanceKeeping.isImminentCollision(v, front)) return Action.STOP;
+        if (front != null) return Action.OVERTAKE;
+        if (v.getSpeed() < v.getMaxSpeed()) return Action.ACCELERATE;
+        return Action.MOVE_FORWARD;
+    }
 }
