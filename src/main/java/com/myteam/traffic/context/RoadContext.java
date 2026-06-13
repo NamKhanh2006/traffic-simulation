@@ -210,24 +210,15 @@ public class RoadContext {
             return false;
         }
 
-        Position myPos = getSubjectPosition();
-        double myAngle = angleAroundCenter(myPos, path.getCenterX(), path.getCenterY());
-        double sweep = path.getSweepRad();
-
         double minDist = nearbyVehicles.stream()
                 .filter(other -> other != subject)
-                .filter(other -> other.getCurrentIntersection() == subject.getCurrentIntersection())
-                .filter(other -> {
-                    Position otherPos = positionSnapshot.getOrDefault(
-                            other, other.getPosition());
-                    double otherAngle = angleAroundCenter(otherPos,
-                            path.getCenterX(), path.getCenterY());
-                    return isAheadOnArc(myAngle, otherAngle, sweep);
-                })
+                // Chỉ xét các xe đang chạy trên CÙNG MỘT quỹ đạo Bezier với xe hiện tại
+                .filter(other -> other.getActivePath() == path)
+                // Xe phía trước là xe có tiến trình (PathProgress) lớn hơn xe hiện tại
+                .filter(other -> other.getPathProgress() > subject.getPathProgress())
                 .mapToDouble(other -> {
-                    Position otherPos = positionSnapshot.getOrDefault(
-                            other, other.getPosition());
-                    return myPos.distanceTo(otherPos);
+                    Position otherPos = positionSnapshot.getOrDefault(other, other.getPosition());
+                    return getSubjectPosition().distanceTo(otherPos);
                 })
                 .min()
                 .orElse(Double.MAX_VALUE);
@@ -374,30 +365,19 @@ public class RoadContext {
         }
 
         double myProgress = subject.getPathProgress();
-        double pathLength = path.getPathLength();
-        double myAngle = angleAroundCenter(getSubjectPosition(), path.getCenterX(), path.getCenterY());
-        double sweep = path.getSweepRad();
-
         Vehicle nearest = null;
         double minProgressGap = Double.MAX_VALUE;
 
         for (Vehicle other : nearbyVehicles) {
             if (other == subject) continue;
-            
-            // Chỉ xét xe cùng intersection và cùng path
-            if (other.getCurrentIntersection() != subject.getCurrentIntersection()) continue;
-            if (other.getActivePath() == null) continue;
-            if (other.getActivePath() != path) continue; // cùng quỹ đạo mới tính
 
-            Position otherPos = positionSnapshot.getOrDefault(other, other.getPosition());
-            double otherAngle = angleAroundCenter(otherPos, path.getCenterX(), path.getCenterY());
-            
-            // Kiểm tra có ở phía trước trên cung không
-            if (!isAheadOnArc(myAngle, otherAngle, sweep)) continue;
+            // Phải chạy trên CÙNG quỹ đạo mới tính là đi phía trước
+            if (other.getActivePath() != path) continue;
 
             double otherProgress = other.getPathProgress();
             double gap = otherProgress - myProgress;
-            
+
+            // Nếu gap > 0 nghĩa là xe kia đang nằm phía trước mũi xe mình
             if (gap > 0 && gap < minProgressGap) {
                 minProgressGap = gap;
                 nearest = other;
@@ -463,22 +443,15 @@ public class RoadContext {
         double projectedS = v.getPathProgress() + estimateDisplacement(v, action);
         double[] projected = path.sampleAt(projectedS);
         Position projectedPos = new Position(projected[0], projected[1]);
-        double myAngle = angleAroundCenter(projectedPos, path.getCenterX(), path.getCenterY());
-        double sweep = path.getSweepRad();
 
         return nearbyVehicles.stream()
                 .filter(other -> other != v)
-                .filter(other -> other.getCurrentIntersection() == v.getCurrentIntersection())
-                .filter(other -> {
-                    Position otherPos = positionSnapshot.getOrDefault(
-                            other, other.getPosition());
-                    double otherAngle = angleAroundCenter(otherPos,
-                            path.getCenterX(), path.getCenterY());
-                    return isAheadOnArc(myAngle, otherAngle, sweep);
-                })
+                // Chỉ xét xe cùng quỹ đạo
+                .filter(other -> other.getActivePath() == path)
+                // Phải nằm phía trước
+                .filter(other -> other.getPathProgress() > v.getPathProgress())
                 .mapToDouble(other -> {
-                    Position otherPos = positionSnapshot.getOrDefault(
-                            other, other.getPosition());
+                    Position otherPos = positionSnapshot.getOrDefault(other, other.getPosition());
                     return projectedPos.distanceTo(otherPos);
                 })
                 .min()

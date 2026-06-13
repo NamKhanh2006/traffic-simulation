@@ -102,7 +102,7 @@ public abstract class Intersection {
                     if (s > 0.05) minSinHalfAngle = Math.min(minSinHalfAngle, s);
                 }
             }
-            radius = Math.max(25, maxHalfWidth / minSinHalfAngle);
+            radius = Math.max(45, maxHalfWidth / minSinHalfAngle);
 
             // Giới hạn trên: không quá 35% độ dài nhánh ngắn nhất
             double minArmLen = arms.stream()
@@ -110,8 +110,8 @@ public abstract class Intersection {
                     .filter(l -> l > 1).min().orElse(Double.MAX_VALUE);
             if (minArmLen < Double.MAX_VALUE)
                 radius = Math.min(radius, minArmLen * 0.35);
-            // Sàn tuyệt đối: radius phải ≥ halfWidth nhánh rộng nhất (để tròn tâm phủ kín)
-            radius = Math.max(maxHalfWidth, radius);
+            // Sàn tuyệt đối
+            radius = Math.max(maxHalfWidth + 10, radius);
         }
 
         return new IntersectionRenderData(centerX, centerY, radius, getIntersectionType(), arms);

@@ -7,7 +7,6 @@ import com.myteam.traffic.model.infrastructure.Lane;
 import com.myteam.traffic.model.infrastructure.RoadSegment;
 import com.myteam.traffic.model.infrastructure.intersection.Intersection;
 import com.myteam.traffic.navigation.IntersectionPath;
-import java.util.List;
 
 public abstract class Vehicle {
     protected Position position;
@@ -22,27 +21,17 @@ public abstract class Vehicle {
     protected DriverBehavior behavior;
 
     private TravelMode travelMode = TravelMode.ON_SEGMENT;
-
-    /** Đoạn đường hiện tại — null khi {@link TravelMode#ON_INTERSECTION_PATH}. */
     protected RoadSegment currentSegment;
-
-    /** Làn hiện tại — null khi {@link TravelMode#ON_INTERSECTION_PATH}. */
     protected Lane currentLane;
-
-    /** Tiến độ trên segment [0, 1]. */
     private double segmentProgress;
-
-    /** Giao lộ hiện tại — null khi {@link TravelMode#ON_SEGMENT}. */
     protected Intersection currentIntersection;
-
-    /** Quỹ đạo cung đang đi — null khi {@link TravelMode#ON_SEGMENT}. */
     private IntersectionPath activePath;
-
-    /** Tiến độ dọc quỹ đạo [0, pathLength]. */
     private double pathProgress;
-
-    /** Nhánh ra dự kiến tại giao lộ sắp tới. */
     private PlannedExit plannedExit = PlannedExit.NONE;
+
+    // Biến hỗ trợ hiệu ứng chuyển làn mượt mà
+    protected double laneChangeProgress = 1.0;
+    protected Lane previousLane = null;
 
     public Vehicle(Position position, Direction direction, DriverBehavior behavior) {
         this.position = position;
@@ -50,8 +39,6 @@ public abstract class Vehicle {
         this.behavior = behavior;
         this.speed = 0;
     }
-
-    // ── Đặt xe lên mạng lưới (gọi từ TrafficController khi spawn) ──
 
     public void placeOnSegment(RoadSegment segment, Lane lane, double t) {
         this.travelMode = TravelMode.ON_SEGMENT;
@@ -61,6 +48,7 @@ public abstract class Vehicle {
         this.currentIntersection = null;
         this.activePath = null;
         this.pathProgress = 0;
+        this.laneChangeProgress = 1.0; // Reset
         syncPoseFromSegment();
     }
 
@@ -72,6 +60,8 @@ public abstract class Vehicle {
         this.currentSegment = null;
         this.currentLane = null;
         this.segmentProgress = 0;
+
+        // Lấy chính xác vị trí và góc từ đường Bezier
         double[] sample = path.sampleAt(0);
         this.position = new Position(sample[0], sample[1]);
         this.direction = new Direction(sample[2]);
@@ -85,231 +75,122 @@ public abstract class Vehicle {
         this.currentIntersection = null;
         this.activePath = null;
         this.pathProgress = 0;
+        this.laneChangeProgress = 1.0; // Reset
         syncPoseFromSegment();
     }
 
-    // ─── Đồng bộ vị trí từ dữ liệu hiện tại ────────────────────────────
     public void syncPositionFromSegment() {
         if (currentSegment == null || currentLane == null) return;
-        
-        double[] pose = currentSegment.getPositionOnLane(
-            currentLane.getIndex(), 
-            segmentProgress
-        );
-        this.position = new Position(pose[0], pose[1]);
-        this.direction = new Direction(pose[2]);
+
+        double[] targetPose = currentSegment.getPositionOnLane(currentLane.getIndex(), segmentProgress);
+
+        // NẾU ĐANG CHUYỂN LÀN -> Tính toán nội suy (Interpolation) để lướt mượt
+        if (laneChangeProgress < 1.0 && previousLane != null) {
+            double[] sourcePose = currentSegment.getPositionOnLane(previousLane.getIndex(), segmentProgress);
+
+            // Lướt X, Y từ từ sang làn mới
+            double x = sourcePose[0] + (targetPose[0] - sourcePose[0]) * laneChangeProgress;
+            double y = sourcePose[1] + (targetPose[1] - sourcePose[1]) * laneChangeProgress;
+
+            // Tạo góc nghiêng đầu xe (Khoảng 15 độ)
+            double tiltOffset = 15.0;
+            if (currentLane.getIndex() < previousLane.getIndex()) {
+                tiltOffset = -15.0; // Rẽ trái
+            }
+            if (currentLane.getDirection() == Lane.Direction.BACKWARD) {
+                tiltOffset = -tiltOffset; // Đảo ngược nếu đang đi lùi
+            }
+
+            // Hiệu ứng hình sin: Nghiêng mạnh ở giữa quá trình, thẳng lái lại khi hoàn thành
+            double tilt = tiltOffset * Math.sin(laneChangeProgress * Math.PI);
+
+            this.position = new Position(x, y);
+            this.direction = new Direction(targetPose[2] + tilt);
+        } else {
+            // Đi thẳng bình thường
+            this.position = new Position(targetPose[0], targetPose[1]);
+            this.direction = new Direction(targetPose[2]);
+        }
     }
 
     public void syncPositionFromPath() {
         if (activePath == null) return;
-        
+
+        // Bỏ hết logic làm mượt đi, tin tưởng 100% vào Bezier Curve
         double[] sample = activePath.sampleAt(pathProgress);
         this.position = new Position(sample[0], sample[1]);
         this.direction = new Direction(sample[2]);
     }
 
     private void syncPoseFromSegment() {
-        if (currentSegment == null || currentLane == null) {
-            return;
-        }
-        double[] pose = currentSegment.getPositionOnLane(currentLane.getIndex(), segmentProgress);
-        this.position = new Position(pose[0], pose[1]);
-        this.direction = new Direction(pose[2]);
+        syncPositionFromSegment();
     }
 
     public boolean isIntersectionPathComplete() {
         return activePath != null && pathProgress >= activePath.getPathLength();
     }
 
-    // --- API Vật lý nguyên tử (Atomic Physical API) ---
-
     public void applyAcceleration(double acc, double deltaTime) {
         this.acceleration = acc;
         this.speed = Math.max(0, Math.min(maxSpeed, speed + acceleration * deltaTime));
     }
 
+    // --- LOGIC CHUYỂN LÀN ---
     public void changeLaneIndex(int newLaneIndex) {
-        // Chỉ thực hiện việc gán lane, logic an toàn nằm ở Strategy
+        // Chỉ bắt đầu chuyển nếu đã hoàn thành lần chuyển trước đó
+        if (this.currentLane != null && this.currentLane.getIndex() == newLaneIndex) return;
+
+        this.previousLane = this.currentLane;
         this.currentLane = currentSegment.getLanes().get(newLaneIndex);
+        this.laneChangeProgress = 0.0; // Bắt đầu animation
     }
 
-    // ── plannedExit ───────────────────────────────────────────
+    public double getLaneChangeProgress() { return laneChangeProgress; }
+    public void setLaneChangeProgress(double progress) { this.laneChangeProgress = progress; }
 
-    public PlannedExit getPlannedExit() {
-        return plannedExit;
-    }
+    public PlannedExit getPlannedExit() { return plannedExit; }
+    public void setPlannedExit(PlannedExit plannedExit) { this.plannedExit = plannedExit != null ? plannedExit : PlannedExit.NONE; }
+    public void clearPlannedExit() { this.plannedExit = PlannedExit.NONE; }
 
-    public void setPlannedExit(PlannedExit plannedExit) {
-        this.plannedExit = plannedExit != null ? plannedExit : PlannedExit.NONE;
-    }
-
-    public void clearPlannedExit() {
-        this.plannedExit = PlannedExit.NONE;
-    }
-
-    // ── Getters / setters ─────────────────────────────────────
-
-    public TravelMode getTravelMode() {
-        return travelMode;
-    }
-
-    public RoadSegment getCurrentSegment() {
-        return travelMode == TravelMode.ON_SEGMENT ? currentSegment : null;
-    }
-
-    public Lane getCurrentLane() {
-        return travelMode == TravelMode.ON_SEGMENT ? currentLane : null;
-    }
-
-    public Intersection getCurrentIntersection() {
-        return travelMode == TravelMode.ON_INTERSECTION_PATH ? currentIntersection : null;
-    }
-
-    public double getSegmentProgress() {
-        return segmentProgress;
-    }
-
-    public IntersectionPath getActivePath() {
-        return activePath;
-    }
-
-    public double getPathProgress() {
-        return pathProgress;
-    }
-
-    public void setPathProgress(double pathProgress) {
-        this.pathProgress = Math.max(0, pathProgress);
-    }
-
-    public Position getPosition() {
-        return position;
-    }
-
-    public void setPosition(Position position) {
-        this.position = position;
-    }
-
-    public double getX() {
-        return position.getX();
-    }
-
-    public double getY() {
-        return position.getY();
-    }
-
-    public Direction getDirection() {
-        return direction;
-    }
-
-    public void setDirection(Direction direction) {
-        this.direction = direction;
-    }
-
-    public double getWidth() {
-        return width;
-    }
-
-    public void setWidth(double width) {
-        this.width = width;
-    }
-
-    public double getHeight() {
-        return height;
-    }
-
-    public void setHeight(double height) {
-        this.height = height;
-    }
-
-    public double getSpeed() {
-        return speed;
-    }
-
-    public void setSpeed(double speed) {
-        //this.speed = speed;
-        this.speed = Math.max(0, Math.min(maxSpeed, speed));
-    }
-
-    public double getMaxSpeed() {
-        return maxSpeed;
-    }
-
-    public void setMaxSpeed(double maxSpeed) {
-        this.maxSpeed = maxSpeed;
-    }
-
-    public VehicleType getType() {
-        return type;
-    }
-
-    public void setType(VehicleType type) {
-        this.type = type;
-    }
-
-    public boolean isEmergency() {
-        return isEmergency;
-    }
-
-    /** Stub: xe khẩn cấp coi như còi đang bật khi {@code isEmergency}. */
-    public boolean isSirenOn() {
-        return isEmergency;
-    }
-
-    public void setEmergency(boolean emergency) {
-        isEmergency = emergency;
-    }
-
-    public DriverBehavior getBehavior() {
-        return behavior;
-    }
-
-    public void setBehavior(DriverBehavior behavior) {
-        this.behavior = behavior;
-    }
-
+    public TravelMode getTravelMode() { return travelMode; }
+    public RoadSegment getCurrentSegment() { return travelMode == TravelMode.ON_SEGMENT ? currentSegment : null; }
+    public Lane getCurrentLane() { return travelMode == TravelMode.ON_SEGMENT ? currentLane : null; }
+    public Intersection getCurrentIntersection() { return travelMode == TravelMode.ON_INTERSECTION_PATH ? currentIntersection : null; }
+    public double getSegmentProgress() { return segmentProgress; }
+    public IntersectionPath getActivePath() { return activePath; }
+    public double getPathProgress() { return pathProgress; }
+    public void setPathProgress(double pathProgress) { this.pathProgress = Math.max(0, pathProgress); }
+    public Position getPosition() { return position; }
+    public void setPosition(Position position) { this.position = position; }
+    public double getX() { return position.getX(); }
+    public double getY() { return position.getY(); }
+    public Direction getDirection() { return direction; }
+    public void setDirection(Direction direction) { this.direction = direction; }
+    public double getWidth() { return width; }
+    public void setWidth(double width) { this.width = width; }
+    public double getHeight() { return height; }
+    public void setHeight(double height) { this.height = height; }
+    public double getSpeed() { return speed; }
+    public void setSpeed(double speed) { this.speed = Math.max(0, Math.min(maxSpeed, speed)); }
+    public double getMaxSpeed() { return maxSpeed; }
+    public void setMaxSpeed(double maxSpeed) { this.maxSpeed = maxSpeed; }
+    public VehicleType getType() { return type; }
+    public void setType(VehicleType type) { this.type = type; }
+    public boolean isEmergency() { return isEmergency; }
+    public boolean isSirenOn() { return isEmergency; }
+    public void setEmergency(boolean emergency) { isEmergency = emergency; }
+    public DriverBehavior getBehavior() { return behavior; }
+    public void setBehavior(DriverBehavior behavior) { this.behavior = behavior; }
     public abstract void honk();
 
-    private static double clamp01(double t) {
-        return Math.max(0.0, Math.min(1.0, t));
-    }
+    private static double clamp01(double t) { return Math.max(0.0, Math.min(1.0, t)); }
+    public void setSegmentProgress(double progress) { this.segmentProgress = clamp01(progress); }
+    public void setCurrentLane(Lane lane) { this.currentLane = lane; }
+    public void setCurrentSegment(RoadSegment segment) { this.currentSegment = segment; }
+    public void setActivePath(IntersectionPath path) { this.activePath = path; }
+    public void setCurrentIntersection(Intersection inter) { this.currentIntersection = inter; }
 
-    // ─── Cập nhật trạng thái nguyên tử ─────────────────────────────────
-    public void setSegmentProgress(double progress) {
-        this.segmentProgress = clamp01(progress);
-    }
-
-    public void setCurrentLane(Lane lane) {
-        this.currentLane = lane;
-    }
-
-    public void setCurrentSegment(RoadSegment segment) {
-        this.currentSegment = segment;
-    }
-
-    public void setActivePath(IntersectionPath path) {
-        this.activePath = path;
-    }
-
-    public void setCurrentIntersection(Intersection inter) {
-        this.currentIntersection = inter;
-    }
-    
-    // =========================================================
-    // Phương thức hỗ trợ IDM và MOBIL
-    // =========================================================
-
-    public double getMaxAcceleration() {
-        // Giá trị mặc định: 2.0 m/s², có thể override cho từng loại xe
-        return 2.0;
-    }
-
-    public double getComfortableDeceleration() {
-        // Giá trị mặc định: 3.0 m/s²
-        return 3.0;
-    }
-
-    public void slowDown(double delta) {
-        setSpeed(Math.max(0, getSpeed() - delta));
-    }
-
+    public double getMaxAcceleration() { return 2.0; }
+    public double getComfortableDeceleration() { return 3.0; }
+    public void slowDown(double delta) { setSpeed(Math.max(0, getSpeed() - delta)); }
 }

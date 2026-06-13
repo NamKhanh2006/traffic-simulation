@@ -1,6 +1,5 @@
 package com.myteam.traffic.navigation;
 
-import com.myteam.traffic.context.RoadContext;
 import com.myteam.traffic.model.infrastructure.ConnectionPoint;
 import com.myteam.traffic.model.infrastructure.Lane;
 import com.myteam.traffic.model.infrastructure.RoadNetwork;
@@ -15,12 +14,10 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
-/**
- * Chọn nhánh ra ({@link ConnectionPoint}) và xây quỹ đạo cung theo góc thật giữa hai nhánh.
- */
 public class IntersectionNavigator {
 
     private static final double INTERSECTION_SEARCH_RADIUS = 60.0;
+    private static final double MERGE_SAFE_DISTANCE = 45.0;
 
     private final RoadNetwork network;
 
@@ -28,13 +25,10 @@ public class IntersectionNavigator {
         this.network = network;
     }
 
-    /** Giao lộ tại cuối segment hiện tại của xe (null nếu không có). */
     public Intersection peekUpcomingIntersection(Vehicle vehicle) {
         RoadSegment segment = vehicle.getCurrentSegment();
         Lane lane = vehicle.getCurrentLane();
-        if (segment == null || lane == null) {
-            return null;
-        }
+        if (segment == null || lane == null) return null;
         return findIntersectionAtSegmentEnd(segment, lane);
     }
 
@@ -42,77 +36,72 @@ public class IntersectionNavigator {
         RoadSegment segment = vehicle.getCurrentSegment();
         Lane lane = vehicle.getCurrentLane();
         PlannedExit planned = vehicle.getPlannedExit();
-        if (segment == null || lane == null || planned == PlannedExit.NONE) {
-            return null;
-        }
+
+        if (segment == null || lane == null || planned == PlannedExit.NONE) return null;
 
         Intersection intersection = findIntersectionAtSegmentEnd(segment, lane);
-        if (intersection == null) {
-            return null;
-        }
+        if (intersection == null) return null;
 
         ConnectionPoint entry = findEntryConnection(intersection, segment);
-        if (entry == null) {
-            return null;
-        }
+        if (entry == null) return null;
 
         List<ConnectionPoint> validExits = listValidExits(intersection, entry);
-        if (validExits.isEmpty()) {
-            return null;
-        }
+        if (validExits.isEmpty()) return null;
 
-        ConnectionPoint exit = selectExit(intersection, entry, validExits, planned);
-        if (exit == null) {
-            return null;
-        }
+        ConnectionPoint exitCP = selectExit(intersection, entry, validExits, planned);
+        if (exitCP == null) return null;
 
-        return buildPath(intersection, entry, exit);
+        RoadSegment outSeg = exitCP.getSegment();
+        Lane outLane = pickDepartureLane(outSeg, exitCP.getEnd());
+
+        return buildPath(intersection, segment, lane, entry, outSeg, outLane, exitCP);
     }
 
     public IntersectionPath buildPath(Intersection intersection,
-                                      ConnectionPoint entry,
-                                      ConnectionPoint exit) {
-        double cx = intersection.getCenterX();
-        double cy = intersection.getCenterY();
-        double radius = intersection.getRenderData().radius;
+                                      RoadSegment inSeg, Lane inLane, ConnectionPoint entryCP,
+                                      RoadSegment outSeg, Lane outLane, ConnectionPoint exitCP) {
 
-        double startAngle = Math.atan2(entry.getY() - cy, entry.getX() - cx);
-        double endAngle = Math.atan2(exit.getY() - cy, exit.getX() - cx);
-        double sweep = shortestSweep(startAngle, endAngle);
+        // Lấy tọa độ và góc chính xác của tâm LÀN VÀO
+        double inT = (inLane.getDirection() == Lane.Direction.FORWARD) ? 1.0 : 0.0;
+        double[] inPose = inSeg.getPositionOnLane(inLane.getIndex(), inT);
+        double startX = inPose[0];
+        double startY = inPose[1];
+        double startHeading = inPose[2];
 
-        return new IntersectionPath(intersection, entry, exit, cx, cy, radius, startAngle, sweep);
+        // Lấy tọa độ và góc chính xác của tâm LÀN RA
+        double outT = (exitCP.getEnd() == ConnectionPoint.End.START) ? 0.0 : 1.0;
+        double[] outPose = outSeg.getPositionOnLane(outLane.getIndex(), outT);
+        double endX = outPose[0];
+        double endY = outPose[1];
+        double endHeading = outPose[2];
+
+        // Trả về quỹ đạo Bezier nối thẳng từ tâm làn này sang tâm làn kia
+        return new IntersectionPath(intersection, entryCP, exitCP,
+                startX, startY, startHeading,
+                endX, endY, endHeading);
     }
 
-    /**
-     * Xe đã trên cung được ưu tiên — không cho nhập nếu có xe trên cung quá gần điểm merge.
-     */
     public boolean canMerge(Vehicle entering, Intersection intersection, List<Vehicle> allVehicles) {
         ConnectionPoint entry = findEntryConnection(intersection, entering.getCurrentSegment());
-        if (entry == null) {
-            return true;
-        }
+        if (entry == null) return true;
 
         double cx = intersection.getCenterX();
         double cy = intersection.getCenterY();
         double r = intersection.getRenderData().radius;
         double entryAngle = Math.atan2(entry.getY() - cy, entry.getX() - cx);
+
         double mergeX = cx + r * Math.cos(entryAngle);
         double mergeY = cy + r * Math.sin(entryAngle);
 
         for (Vehicle other : allVehicles) {
-            if (other == entering) {
-                continue;
-            }
-            if (other.getTravelMode() != TravelMode.ON_INTERSECTION_PATH) {
-                continue;
-            }
-            if (other.getCurrentIntersection() != intersection) {
-                continue;
-            }
+            if (other == entering) continue;
+            if (other.getTravelMode() != TravelMode.ON_INTERSECTION_PATH) continue;
+            if (other.getCurrentIntersection() != intersection) continue;
 
             double dx = other.getPosition().getX() - mergeX;
             double dy = other.getPosition().getY() - mergeY;
-            if (Math.sqrt(dx * dx + dy * dy) < RoadContext.SAFE_DISTANCE) {
+
+            if (Math.hypot(dx, dy) < MERGE_SAFE_DISTANCE) {
                 return false;
             }
         }
@@ -121,12 +110,12 @@ public class IntersectionNavigator {
 
     public void applyExit(Vehicle vehicle) {
         IntersectionPath path = vehicle.getActivePath();
-        if (path == null) {
-            return;
-        }
+        if (path == null) return;
+
         ConnectionPoint exit = path.getExit();
         RoadSegment segment = exit.getSegment();
         Lane lane = pickDepartureLane(segment, exit.getEnd());
+
         double t = (exit.getEnd() == ConnectionPoint.End.START) ? 0.0 : 1.0;
         vehicle.exitToSegment(segment, lane, t);
     }
@@ -134,9 +123,7 @@ public class IntersectionNavigator {
     public List<ConnectionPoint> listValidExits(Intersection intersection, ConnectionPoint entry) {
         List<ConnectionPoint> valid = new ArrayList<>();
         for (ConnectionPoint cp : intersection.getConnections()) {
-            if (cp != entry) {
-                valid.add(cp);
-            }
+            if (cp != entry) valid.add(cp);
         }
         return valid;
     }
@@ -146,19 +133,9 @@ public class IntersectionNavigator {
                                        List<ConnectionPoint> validExits,
                                        PlannedExit planned) {
         if (planned == PlannedExit.RANDOM) {
-            return pickRandomExit(validExits);
+            return validExits.get(ThreadLocalRandom.current().nextInt(validExits.size()));
         }
-        return pickExitByPlanned(intersection, entry, validExits, planned);
-    }
 
-    private ConnectionPoint pickRandomExit(List<ConnectionPoint> validExits) {
-        return validExits.get(ThreadLocalRandom.current().nextInt(validExits.size()));
-    }
-
-    private ConnectionPoint pickExitByPlanned(Intersection intersection,
-                                              ConnectionPoint entry,
-                                              List<ConnectionPoint> validExits,
-                                              PlannedExit planned) {
         double cx = intersection.getCenterX();
         double cy = intersection.getCenterY();
 
@@ -167,20 +144,14 @@ public class IntersectionNavigator {
                 Math.atan2(cp.getY() - cy, cp.getX() - cx)));
 
         int entryIdx = sorted.indexOf(entry);
-        if (entryIdx < 0) {
-            return null;
-        }
+        if (entryIdx < 0) return null;
 
         int n = sorted.size();
         ConnectionPoint target = switch (planned) {
             case LEFT -> sorted.get((entryIdx + 1) % n);
             case RIGHT -> sorted.get((entryIdx - 1 + n) % n);
             case STRAIGHT -> pickOppositeArm(validExits, entry, cx, cy);
-            case U_TURN -> {
-                // Quay đầu: thường là quay 180°, có thể chọn nhánh đối diện hoặc
-                // nhánh bên trái nếu giao lộ cho phép
-            yield pickOppositeArm(validExits, entry, cx, cy);
-            }
+            case U_TURN -> pickOppositeArm(validExits, entry, cx, cy);
             default -> null;
         };
 
@@ -190,9 +161,7 @@ public class IntersectionNavigator {
         return target;
     }
 
-    private ConnectionPoint pickOppositeArm(List<ConnectionPoint> arms,
-                                            ConnectionPoint entry,
-                                            double cx, double cy) {
+    private ConnectionPoint pickOppositeArm(List<ConnectionPoint> arms, ConnectionPoint entry, double cx, double cy) {
         double entryAngle = Math.atan2(entry.getY() - cy, entry.getX() - cx);
         double targetAngle = entryAngle + Math.PI;
 
@@ -200,11 +169,14 @@ public class IntersectionNavigator {
         double bestDelta = Double.MAX_VALUE;
 
         for (ConnectionPoint cp : arms) {
-            if (cp == entry) {
-                continue;
-            }
+            if (cp == entry) continue;
             double angle = Math.atan2(cp.getY() - cy, cp.getX() - cx);
-            double delta = Math.abs(shortestSweep(targetAngle, angle));
+
+            double delta = angle - targetAngle;
+            while (delta <= -Math.PI) delta += 2 * Math.PI;
+            while (delta > Math.PI) delta -= 2 * Math.PI;
+            delta = Math.abs(delta);
+
             if (delta < bestDelta) {
                 bestDelta = delta;
                 best = cp;
@@ -213,35 +185,19 @@ public class IntersectionNavigator {
         return best;
     }
 
-    private double shortestSweep(double startAngle, double endAngle) {
-        double raw = endAngle - startAngle;
-        while (raw <= -Math.PI) {
-            raw += 2 * Math.PI;
-        }
-        while (raw > Math.PI) {
-            raw -= 2 * Math.PI;
-        }
-        return raw;
-    }
-
     private Intersection findIntersectionAtSegmentEnd(RoadSegment segment, Lane lane) {
-        double x;
-        double y;
+        double x, y;
         if (lane.getDirection() == Lane.Direction.FORWARD) {
-            x = segment.getEndX();
-            y = segment.getEndY();
+            x = segment.getEndX(); y = segment.getEndY();
         } else {
-            x = segment.getStartX();
-            y = segment.getStartY();
+            x = segment.getStartX(); y = segment.getStartY();
         }
         return network.findNearestIntersection(x, y, INTERSECTION_SEARCH_RADIUS);
     }
 
     ConnectionPoint findEntryConnection(Intersection intersection, RoadSegment segment) {
         for (ConnectionPoint cp : intersection.getConnections()) {
-            if (cp.getSegment() == segment) {
-                return cp;
-            }
+            if (cp.getSegment() == segment) return cp;
         }
         return null;
     }
@@ -253,9 +209,7 @@ public class IntersectionNavigator {
                 : Lane.Direction.BACKWARD;
 
         for (Lane lane : lanes) {
-            if (lane.getDirection() == desired) {
-                return lane;
-            }
+            if (lane.getDirection() == desired) return lane;
         }
         return lanes.get(0);
     }

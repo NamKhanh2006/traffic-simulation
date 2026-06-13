@@ -1,7 +1,6 @@
 package com.myteam.traffic.controller;
 
 import com.myteam.traffic.behavior.common.Action;
-import com.myteam.traffic.behavior.common.Turn;
 import com.myteam.traffic.behavior.DriverBehavior;
 import com.myteam.traffic.context.RoadContext;
 import com.myteam.traffic.light.TrafficLight;
@@ -21,163 +20,115 @@ import com.myteam.traffic.vehicle.emergency.FireTruck;
 import java.util.*;
 import java.util.function.Supplier;
 
-/**
- * Bộ điều phối trung tâm của hệ thống mô phỏng giao thông.
- * <p>
- * Mỗi tick, controller thực hiện:
- * <ol>
- *   <li>Cập nhật tất cả đèn giao thông</li>
- *   <li>Chụp ảnh vị trí tất cả xe (snapshot)</li>
- *   <li>Với mỗi xe: tạo RoadContext → behavior quyết định Action → kiểm tra luật → thực thi (hoặc fallback)</li>
- *   <li>Xử lý vào/ra giao lộ</li>
- * </ol>
- * <p>
- * Kiến trúc tuân thủ nguyên tắc:
- * <ul>
- *   <li><b>Vehicle</b> chỉ cung cấp atomic methods (thay đổi trạng thái vật lý)</li>
- *   <li><b>DriverBehavior</b> chịu trách nhiệm ra quyết định (Action)</li>
- *   <li><b>Utility classes</b> (DistanceKeeping, LaneChange, OvertakeStrategy) đảm nhiệm các kỹ năng phức tạp</li>
- *   <li><b>TrafficController</b> chỉ điều phối và kiểm tra luật</li>
- * </ul>
- */
 public class TrafficController {
 
-    // ── Ngưỡng khoảng cách để xác định xe "sắp tới" intersection ──
-    private static final double APPROACHING_THRESHOLD = 80.0;
+    // TĂNG LÊN 150.0 ĐỂ QUÉT ĐƯỢC CÁC VÒNG XUYẾN KHỔNG LỒ (Chống lỗi xóa nhầm xe)
+    private static final double APPROACHING_THRESHOLD = 150.0;
+    private static final double INITIAL_SPEED = 20.0;
+    private static final double NORMAL_ACCEL  = 8.0;
+    private static final double NORMAL_BRAKE  = 12.0;
+    private static final double HARD_BRAKE    = 35.0;
 
-    // ── Hạ tầng ───────────────────────────────────────────────────
     private final RoadNetwork network;
     private final IntersectionNavigator intersectionNavigator;
     private final PathFollower pathFollower = new PathFollower();
+    private final Random random = new Random();
 
-    // ── Danh sách thực thể trong simulation ──────────────────────
     private final List<Vehicle> vehicles = new ArrayList<>();
     private final List<TrafficLight> lights = new ArrayList<>();
-
-    // ── Luật giao thông (tái sử dụng từ teammate) ─────────────────
     private final List<TrafficRule> globalRules = new ArrayList<>();
-
-    // ── Factory để tạo xe (cho phép mở rộng) ──────────────────────
-    private Supplier<Vehicle> vehicleFactory = () -> new Car(new Position(0,0), new com.myteam.traffic.model.geometry.Direction(0), null);
-
-    // ═══════════════════════════════════════════════════════════════
-    // Constructor
-    // ═══════════════════════════════════════════════════════════════
 
     public TrafficController(RoadNetwork network) {
         if (network == null) throw new IllegalArgumentException("Network không được null");
         this.network = network;
         this.intersectionNavigator = new IntersectionNavigator(network);
-        // Mặc định tạo xe Car, có thể thay bằng setVehicleFactory
-        this.vehicleFactory = () -> new Car(new Position(0, 0), new Direction(0), null);
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // API công khai – thêm/xoá thực thể và luật
-    // ═══════════════════════════════════════════════════════════════
-
-    /**
-     * Đặt factory để tạo xe khi spawn.
-     * @param factory Supplier trả về đối tượng Vehicle đã được cấu hình (vị trí, hướng, behavior sẽ được ghi đè sau)
-     */
-    public void setVehicleFactory(Supplier<Vehicle> factory) {
-        this.vehicleFactory = factory;
-    }
-
-    /**
-     * Sinh một xe mới tại đầu vào của một đoạn đường.
-     * @param entrySegment Đoạn đường bắt đầu
-     * @param lane Làn đường
-     * @param behavior Hành vi lái xe
-     * @param vehicleType Loại xe (để tạo đúng lớp con)
-     */
     public void spawnVehicle(RoadSegment entrySegment, Lane lane, DriverBehavior behavior, VehicleType vehicleType) {
         Vehicle v = createVehicleByType(vehicleType, behavior);
-        v.placeOnSegment(entrySegment, lane, 0.0);
+        double startT = (lane.getDirection() == Lane.Direction.FORWARD) ? 0.0 : 1.0;
+        v.placeOnSegment(entrySegment, lane, startT);
+        v.setSpeed(INITIAL_SPEED);
         addVehicle(v);
     }
 
-    private Vehicle createVehicleByType(VehicleType type, DriverBehavior behavior) {
-        Position startPos = new Position(0, 0);
-        Direction startDir = new Direction(0);
-        com.myteam.traffic.model.geometry.Direction dir = new com.myteam.traffic.model.geometry.Direction(0);
-        switch (type) {
-            case CAR: return new Car(startPos, startDir, behavior);
-            case MOTORBIKE: return new Motorbike(startPos, startDir, behavior);
-            case BICYCLE: return new Bicycle(startPos, startDir, behavior);
-            case AMBULANCE: return new Ambulance(startPos, startDir, behavior);
-            case FIRETRUCK: return new FireTruck(startPos, startDir, behavior);
-            default: return new Car(startPos, startDir, behavior);
-        }
+    public Vehicle createVehicleByType(VehicleType type, DriverBehavior behavior) {
+        Position p = new Position(0, 0);
+        Direction d = new Direction(0);
+        return switch (type) {
+            case CAR       -> new Car(p, d, behavior);
+            case MOTORBIKE -> new Motorbike(p, d, behavior);
+            case BICYCLE   -> new Bicycle(p, d, behavior);
+            case AMBULANCE -> new Ambulance(p, d, behavior);
+            case FIRETRUCK -> new FireTruck(p, d, behavior);
+        };
     }
 
-    public void addVehicle(Vehicle v) {
-        if (v != null) vehicles.add(v);
-    }
-
-    public void addLight(TrafficLight light) {
-        if (light != null) lights.add(light);
-    }
-
-    public void addRule(TrafficRule rule) {
-        if (rule != null) globalRules.add(rule);
-    }
-
-    public void removeRule(TrafficRule rule) {
-        globalRules.remove(rule);
-    }
-
-    public List<TrafficRule> getGlobalRules() {
-        return Collections.unmodifiableList(globalRules);
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // TICK – vòng lặp chính
-    // ═══════════════════════════════════════════════════════════════
+    public void addVehicle(Vehicle v) { if (v != null) vehicles.add(v); }
+    public void addLight(TrafficLight light) { if (light != null) lights.add(light); }
+    public void addRule(TrafficRule rule) { if (rule != null) globalRules.add(rule); }
+    public List<TrafficRule> getGlobalRules() { return Collections.unmodifiableList(globalRules); }
 
     public void tick(double deltaTime) {
-        // 1. Loại bỏ xe đã hoàn thành hành trình (không còn đường phía trước)
-        vehicles.removeIf(v ->
-                v.getTravelMode() == TravelMode.ON_SEGMENT &&
-                        v.getSegmentProgress() >= 1.0 &&
-                        findUpcomingIntersection(v, v.getPosition()) == null
-        );
+        vehicles.removeIf(v -> {
+            if (v.getTravelMode() != TravelMode.ON_SEGMENT) return false;
+            if (v.getCurrentLane() == null) return true;
 
-        // 2. Cập nhật tất cả đèn giao thông trước khi xe ra quyết định
-        for (TrafficLight light : lights) {
-            light.tick();
-        }
+            boolean reachedEnd = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD)
+                    ? v.getSegmentProgress() >= 1.0
+                    : v.getSegmentProgress() <= 0.0;
 
-        // 3. Chụp ảnh vị trí tất cả xe TẠI ĐẦU TICK (quan trọng để đảm bảo công bằng)
+            return reachedEnd && findUpcomingIntersection(v, v.getPosition()) == null;
+        });
+
+        for (TrafficLight light : lights) light.tick();
         Map<Vehicle, Position> snapshot = takePositionSnapshot();
 
-        // 4. Xử lý từng xe
-        for (Vehicle v : vehicles) {
+        for (Vehicle v : new ArrayList<>(vehicles)) {
+            autoSetPlannedExit(v);
             RoadContext ctx = buildContext(v, snapshot);
-            processVehicle(v, ctx, deltaTime);
+            Action proposed = v.getBehavior().decideAction(v, ctx);
+            Action action = isVehicleAllowed(v, proposed, ctx)
+                    ? proposed
+                    : v.getBehavior().handleRejection(v, ctx, proposed);
+
+            executeAction(v, action, deltaTime);
+            tryEnterIntersection(v);
+            tryExitIntersection(v);
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // Snapshot vị trí
-    // ═══════════════════════════════════════════════════════════════
+    private void autoSetPlannedExit(Vehicle v) {
+        if (v.getTravelMode() != TravelMode.ON_SEGMENT) return;
+        if (v.getPlannedExit() != PlannedExit.NONE) return;
+
+        boolean nearEnd = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD)
+                ? v.getSegmentProgress() > 0.85
+                : v.getSegmentProgress() < 0.15;
+
+        if (!nearEnd) return;
+
+        Intersection upcoming = findUpcomingIntersection(v, v.getPosition());
+        if (upcoming == null) return;
+
+        double r = random.nextDouble();
+        PlannedExit exit;
+        if (r < 0.50)      exit = PlannedExit.STRAIGHT;
+        else if (r < 0.75) exit = PlannedExit.LEFT;
+        else               exit = PlannedExit.RIGHT;
+
+        v.setPlannedExit(exit);
+    }
 
     private Map<Vehicle, Position> takePositionSnapshot() {
         Map<Vehicle, Position> snapshot = new HashMap<>();
-        for (Vehicle v : vehicles) {
-            snapshot.put(v, v.getPosition());
-        }
+        for (Vehicle v : vehicles) snapshot.put(v, v.getPosition());
         return Collections.unmodifiableMap(snapshot);
     }
-
-    // ═══════════════════════════════════════════════════════════════
-    // Xây dựng RoadContext cho một xe
-    // ═══════════════════════════════════════════════════════════════
 
     private RoadContext buildContext(Vehicle subject, Map<Vehicle, Position> snapshot) {
         TrafficLightState lightState = getCurrentLightState(subject);
         List<Vehicle> nearby = findNearbyVehicles(subject, snapshot);
-
         return new RoadContext.Builder()
                 .subject(subject)
                 .lightState(lightState)
@@ -188,38 +139,23 @@ public class TrafficController {
                 .build();
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // Tìm xe lân cận theo topology (3 case)
-    // ═══════════════════════════════════════════════════════════════
-
     private List<Vehicle> findNearbyVehicles(Vehicle subject, Map<Vehicle, Position> snapshot) {
         Position subjectPos = snapshot.getOrDefault(subject, subject.getPosition());
-        RoadSegment subjectSegment = subject.getCurrentSegment();
+        RoadSegment subjectSeg = subject.getCurrentSegment();
         Intersection upcoming = findUpcomingIntersection(subject, subjectPos);
         Intersection current = subject.getCurrentIntersection();
-        if (current == null) {
-            current = findCurrentIntersection(subjectPos);
-        }
+        if (current == null) current = findCurrentIntersection(subjectPos);
 
         List<Vehicle> nearby = new ArrayList<>();
         for (Vehicle other : vehicles) {
             if (other == subject) continue;
-
-            // Case 1: cùng RoadSegment
-            if (subjectSegment != null && other.getCurrentSegment() == subjectSegment) {
-                nearby.add(other);
-                continue;
+            if (subjectSeg != null && other.getCurrentSegment() == subjectSeg) {
+                nearby.add(other); continue;
             }
-
             Position otherPos = snapshot.getOrDefault(other, other.getPosition());
-
-            // Case 2: other đang ở intersection mà subject sắp tới
             if (upcoming != null && isAtIntersection(otherPos, upcoming)) {
-                nearby.add(other);
-                continue;
+                nearby.add(other); continue;
             }
-
-            // Case 3: cả hai cùng ở một intersection
             if (current != null && isAtIntersection(otherPos, current)) {
                 nearby.add(other);
             }
@@ -227,80 +163,40 @@ public class TrafficController {
         return nearby;
     }
 
-    private Intersection findUpcomingIntersection(Vehicle subject, Position subjectPos) {
-        RoadSegment seg = subject.getCurrentSegment();
-        Lane lane = subject.getCurrentLane();
+    private Intersection findUpcomingIntersection(Vehicle v, Position pos) {
+        RoadSegment seg = v.getCurrentSegment();
+        Lane lane = v.getCurrentLane();
         if (seg == null || lane == null) return null;
 
-        double targetX, targetY;
-        if (lane.getDirection() == Lane.Direction.FORWARD) {
-            targetX = seg.getEndX();
-            targetY = seg.getEndY();
-        } else {
-            targetX = seg.getStartX();
-            targetY = seg.getStartY();
-        }
+        double targetX = (lane.getDirection() == Lane.Direction.FORWARD) ? seg.getEndX() : seg.getStartX();
+        double targetY = (lane.getDirection() == Lane.Direction.FORWARD) ? seg.getEndY() : seg.getStartY();
 
-        double distToEnd = subjectPos.distanceTo(new Position(targetX, targetY));
-        if (distToEnd > APPROACHING_THRESHOLD) return null;
-
-        return network.findNearestIntersection(targetX, targetY, 60.0);
+        if (pos.distanceTo(new Position(targetX, targetY)) > APPROACHING_THRESHOLD) return null;
+        return network.findNearestIntersection(targetX, targetY, APPROACHING_THRESHOLD);
     }
 
-    private Intersection findCurrentIntersection(Position subjectPos) {
+    private Intersection findCurrentIntersection(Position pos) {
         for (Intersection inter : network.getIntersections()) {
-            if (isAtIntersection(subjectPos, inter)) return inter;
+            if (isAtIntersection(pos, inter)) return inter;
         }
         return null;
     }
 
-    private boolean isAtIntersection(Position pos, Intersection intersection) {
-        double radius = intersection.getRenderData().radius;
-        double cx = intersection.getCenterX();
-        double cy = intersection.getCenterY();
-        return pos.distanceTo(new Position(cx, cy)) <= radius;
+    private boolean isAtIntersection(Position pos, Intersection inter) {
+        double radius = inter.getRenderData().radius;
+        return pos.distanceTo(new Position(inter.getCenterX(), inter.getCenterY())) <= radius;
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // Xử lý một xe: quyết định → kiểm tra → thực thi (hoặc fallback)
-    // ═══════════════════════════════════════════════════════════════
-
-    private void processVehicle(Vehicle v, RoadContext ctx, double deltaTime) {
-        Action proposed = v.getBehavior().decideAction(v, ctx);
-        if (isVehicleAllowed(v, proposed, ctx)) {
-            executeAction(v, proposed, deltaTime);
-        } else {
-            Action fallback = v.getBehavior().handleRejection(v, ctx, proposed);
-            executeAction(v, fallback, deltaTime);
-        }
-        // Xử lý vào/ra giao lộ sau khi di chuyển
-        tryEnterIntersection(v);
-        tryExitIntersection(v);
-    }
-
-    /**
-     * Kiểm tra action có được phép dựa trên tất cả luật (global + local).
-     * Xe khẩn cấp được miễn trừ nếu rule.appliesTo() trả false.
-     */
     public boolean isVehicleAllowed(Vehicle v, Action a, RoadContext ctx) {
         List<TrafficRule> allRules = new ArrayList<>(globalRules);
         allRules.addAll(ctx.getLocalRules());
         allRules.sort(Comparator.comparingInt(TrafficRule::getPriority).reversed());
-
         for (TrafficRule rule : allRules) {
             if (!rule.appliesTo(v)) continue;
-            if (!rule.isAllowed(v, a, ctx)) {
-                System.out.printf("[CONTROLLER] REJECTED: %s → %s (rule: %s)%n",
-                        v.getType(), a, rule.getClass().getSimpleName());
-                return false;
-            }
+            if (!rule.isAllowed(v, a, ctx)) return false;
         }
         return true;
     }
-
-    // ═══════════════════════════════════════════════════════════════
-    // Thực thi action (tách biệt theo TravelMode)
-    // ═══════════════════════════════════════════════════════════════
 
     private void executeAction(Vehicle v, Action action, double deltaTime) {
         if (v.getTravelMode() == TravelMode.ON_INTERSECTION_PATH) {
@@ -311,125 +207,123 @@ public class TrafficController {
     }
 
     private void executeOnSegment(Vehicle v, Action action, double deltaTime) {
+        RoadSegment seg = v.getCurrentSegment();
+        if (seg == null) return;
+
         switch (action) {
-            case MOVE_FORWARD:
-                v.setSegmentProgress(v.getSegmentProgress() + v.getSpeed() * deltaTime / v.getCurrentSegment().getLength());
-                v.syncPositionFromSegment();
-                break;
-            case ACCELERATE:
-                v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + 5.0 * deltaTime));
-                break;
-            case SLOW_DOWN:
-                v.setSpeed(Math.max(0, v.getSpeed() - 8.0 * deltaTime));
-                break;
-            case STOP:
-                v.setSpeed(0);
-                break;
-            case CHANGE_LANE:
-                // Đơn giản: chuyển sang làn kề bên phải nếu có
-                int newIdx = v.getCurrentLane().getIndex() + 1;
-                if (newIdx < v.getCurrentSegment().getLanes().size()) {
-                    v.changeLaneIndex(newIdx);
+            case ACCELERATE -> {
+                v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + NORMAL_ACCEL * deltaTime));
+                advanceOnSegment(v, deltaTime);
+            }
+            case MOVE_FORWARD -> advanceOnSegment(v, deltaTime);
+            case SLOW_DOWN -> {
+                v.setSpeed(Math.max(0, v.getSpeed() - NORMAL_BRAKE * deltaTime));
+                if (v.getSpeed() > 0) advanceOnSegment(v, deltaTime);
+            }
+            case STOP -> {
+                v.setSpeed(Math.max(0, v.getSpeed() - HARD_BRAKE * deltaTime));
+                if (v.getSpeed() > 0) advanceOnSegment(v, deltaTime);
+            }
+            case CHANGE_LANE -> {
+                if (v.getLaneChangeProgress() >= 1.0) {
+                    int newIdx = v.getCurrentLane().getIndex() + 1;
+                    if (newIdx < seg.getLanes().size() &&
+                            seg.getLanes().get(newIdx).getDirection() == v.getCurrentLane().getDirection() &&
+                            isLaneSafeToEnter(v, seg, newIdx, 45.0)) {
+                        v.changeLaneIndex(newIdx);
+                    }
                 }
-                break;
-            case OVERTAKE:
-                // Vượt: tăng tốc + chuyển làn trái
-                v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + 5.0 * deltaTime))
-                int leftIdx = v.getCurrentLane().getIndex() - 1;
-                if (leftIdx >= 0) {
-                    v.changeLaneIndex(leftIdx);
+                advanceOnSegment(v, deltaTime);
+            }
+            case OVERTAKE -> {
+                v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + NORMAL_ACCEL * deltaTime));
+                if (v.getLaneChangeProgress() >= 1.0) {
+                    int leftIdx = v.getCurrentLane().getIndex() - 1;
+                    if (leftIdx >= 0 &&
+                            seg.getLanes().get(leftIdx).getDirection() == v.getCurrentLane().getDirection() &&
+                            isLaneSafeToEnter(v, seg, leftIdx, 45.0)) {
+                        v.changeLaneIndex(leftIdx);
+                    }
                 }
-                break;
-            case TURN_LEFT:
-                /*
-                v.setPlannedExit(PlannedExit.LEFT);
-                break;
-                */
-               if (Turn.executeTurn(v, PlannedExit.LEFT)) {
-                    // thành công, không cần làm gì thêm
-                } else {
-                // không được phép rẽ, có thể fallback về MOVE_FORWARD
-                    v.setPlannedExit(PlannedExit.NONE);
-                }   
-                break;
-            case TURN_RIGHT:
-                /*
-                v.setPlannedExit(PlannedExit.RIGHT);
-                break;
-                */
-                if (Turn.executeTurn(v, PlannedExit.RIGHT)) {
-                    // thành công, không cần làm gì thêm
-                } else {
-                    // không được phép rẽ, có thể fallback về MOVE_FORWARD
-                    v.setPlannedExit(PlannedExit.NONE);
-                }
-                break;
-            case U_TURN:
-                /*v.setPlannedExit(PlannedExit.LEFT);
-                break;*/
-                if (Turn.executeTurn(v, PlannedExit.LEFT)) {
-                    // thành công, không cần làm gì thêm
-                } else {
-                    // không được phép rẽ, có thể fallback về MOVE_FORWARD
-                    v.setPlannedExit(PlannedExit.NONE);
-                }
-                break;
-            case HONK:
-                v.honk();
-                break;
-            default:
-                v.setSegmentProgress(v.getSegmentProgress() + v.getSpeed() * deltaTim) / v.getCurrentSegment().getLength());
-                v.syncPositionFromSegment();
+                advanceOnSegment(v, deltaTime);
+            }
+            case HONK -> { v.honk(); advanceOnSegment(v, deltaTime); }
+            case TURN_LEFT -> { v.setPlannedExit(PlannedExit.LEFT); advanceOnSegment(v, deltaTime); }
+            case TURN_RIGHT -> { v.setPlannedExit(PlannedExit.RIGHT); advanceOnSegment(v, deltaTime); }
+            case U_TURN -> { v.setPlannedExit(PlannedExit.U_TURN); advanceOnSegment(v, deltaTime); }
+            default -> advanceOnSegment(v, deltaTime);
         }
-        // Đảm bảo tiến độ không vượt quá 1
+
         if (v.getSegmentProgress() > 1.0) v.setSegmentProgress(1.0);
+        if (v.getSegmentProgress() < 0.0) v.setSegmentProgress(0.0);
     }
 
-     private void executeOnIntersectionPath(Vehicle v, Action action, double deltaTime) {
+    private boolean isLaneSafeToEnter(Vehicle v, RoadSegment seg, int targetLaneIdx, double safeRadius) {
+        for (Vehicle other : vehicles) {
+            if (other != v && other.getCurrentSegment() == seg && other.getCurrentLane().getIndex() == targetLaneIdx) {
+                if (v.getPosition().distanceTo(other.getPosition()) < safeRadius) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private void advanceOnSegment(Vehicle v, double deltaTime) {
+        RoadSegment seg = v.getCurrentSegment();
+        if (seg == null || seg.getLength() < 1.0) return;
+
+        if (v.getLaneChangeProgress() < 1.0) {
+            v.setLaneChangeProgress(v.getLaneChangeProgress() + deltaTime / 1.5);
+            if (v.getLaneChangeProgress() > 1.0) v.setLaneChangeProgress(1.0);
+        }
+
+        double dirMultiplier = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD) ? 1.0 : -1.0;
+        double dp = (v.getSpeed() * deltaTime / seg.getLength()) * dirMultiplier;
+
+        v.setSegmentProgress(v.getSegmentProgress() + dp);
+        v.syncPositionFromSegment();
+    }
+
+    private void executeOnIntersectionPath(Vehicle v, Action action, double deltaTime) {
         IntersectionPath path = v.getActivePath();
         if (path == null) return;
+
         switch (action) {
-            case MOVE_FORWARD:
-                v.setPathProgress(v.getPathProgress() + v.getSpeed() * deltaTime);
-                pathFollower.syncPose(v, path, v.getPathProgress());
-                break;
-            case ACCELERATE:
-                v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + 5.0 * deltaTime));
-                v.setPathProgress(v.getPathProgress() + v.getSpeed() * deltaTime);
-                pathFollower.syncPose(v, path, v.getPathProgress());
-                break;
-            case SLOW_DOWN:
-                v.setSpeed(Math.max(0, v.getSpeed() - 8.0 * deltaTime));
-                v.setPathProgress(v.getPathProgress() + v.getSpeed() * deltaTime);
-                pathFollower.syncPose(v, path, v.getPathProgress());
-                break;
-            case STOP:
-                v.setSpeed(0);
-                break;
-            case HONK:
-                v.honk();
-                break;
-            default:
-                v.setPathProgress(v.getPathProgress() + v.getSpeed() * deltaTime);
-                pathFollower.syncPose(v, path, v.getPathProgress());
+            case STOP -> v.setSpeed(Math.max(0, v.getSpeed() - HARD_BRAKE * deltaTime));
+            case SLOW_DOWN -> v.setSpeed(Math.max(5.0, v.getSpeed() - NORMAL_BRAKE * deltaTime));
+            case ACCELERATE -> {
+                if (v.getSpeed() < 10.0) v.setSpeed(10.0);
+                v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + NORMAL_ACCEL * deltaTime));
+            }
+            case HONK -> v.honk();
+            default -> { if (v.getSpeed() < 10.0) v.setSpeed(10.0); }
+        }
+
+        if (v.getSpeed() > 0) {
+            v.setPathProgress(v.getPathProgress() + v.getSpeed() * deltaTime);
+            pathFollower.syncPose(v, path, v.getPathProgress());
         }
     }
-
-    // ═══════════════════════════════════════════════════════════════
-    // Quản lý vào/ra giao lộ (navigation)
-    // ═══════════════════════════════════════════════════════════════
 
     private void tryEnterIntersection(Vehicle v) {
         if (v.getTravelMode() != TravelMode.ON_SEGMENT) return;
         if (v.getPlannedExit() == PlannedExit.NONE) return;
-        if (v.getSegmentProgress() < 1.0) return;
+
+        boolean readyToEnter = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD)
+                ? v.getSegmentProgress() >= 1.0
+                : v.getSegmentProgress() <= 0.0;
+
+        if (!readyToEnter) return;
 
         Intersection upcoming = intersectionNavigator.peekUpcomingIntersection(v);
-        if (upcoming != null && !intersectionNavigator.canMerge(v, upcoming, vehicles)) {
-            return; // có xe trên cung quá gần
-        }
+        if (upcoming != null && !intersectionNavigator.canMerge(v, upcoming, vehicles)) return;
 
         IntersectionPath path = intersectionNavigator.buildPath(v);
+        if (path == null) {
+            v.setPlannedExit(PlannedExit.STRAIGHT);
+            path = intersectionNavigator.buildPath(v);
+        }
         if (path == null) {
             v.clearPlannedExit();
             return;
@@ -444,21 +338,21 @@ public class TrafficController {
         if (!v.isIntersectionPathComplete()) return;
 
         intersectionNavigator.applyExit(v);
+        if (v.getSpeed() < 10.0) v.setSpeed(INITIAL_SPEED);
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // Helper: lấy trạng thái đèn giao thông (hiện tại lấy đèn đầu tiên)
-    // TODO: cải tiến để lấy đèn đúng với intersection sắp tới của xe
-    // ═══════════════════════════════════════════════════════════════
-
+    // FIX LỖI GIẬT CỤC: Xe chỉ tuân theo đèn giao thông khi đang đứng sát mép giao lộ
     private TrafficLightState getCurrentLightState(Vehicle subject) {
-        if (lights.isEmpty()) return TrafficLightState.GREEN;
-        // Tìm đèn giao thông gắn với intersection sắp tới (nếu có)
-        Intersection upcoming = findUpcomingIntersection(subject, subject.getPosition());
-        if (upcoming != null) {
-            // Giả sử mỗi intersection có thể có đèn riêng – ở đây đơn giản trả về đèn đầu tiên
-            // Trong hệ thống hoàn chỉnh, bạn sẽ map intersection -> TrafficLight
-        }
+        if (lights.isEmpty() || subject.getCurrentLane() == null) return TrafficLightState.GREEN;
+
+        boolean nearEnd = (subject.getCurrentLane().getDirection() == Lane.Direction.FORWARD)
+                ? subject.getSegmentProgress() > 0.85
+                : subject.getSegmentProgress() < 0.15;
+
+        if (!nearEnd) return TrafficLightState.GREEN; // Trả về Green nếu đang ở giữa đường
+
         return lights.get(0).getCurrentState();
     }
+
+    public List<Vehicle> getVehicles() { return Collections.unmodifiableList(vehicles); }
 }
