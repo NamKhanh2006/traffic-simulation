@@ -1,24 +1,3 @@
-/*
-package com.myteam.traffic.light;
-
-public class CountdownLight extends TrafficLight {
-    public CountdownLight(int redTime, int greenTime, int yellowTime) {
-        super(redTime, greenTime, yellowTime);
-    }
-
-    @Override
-    public void changeState() {
-        if (secondsRemaining > 1) {
-            secondsRemaining--;
-            return;
-        }
-
-        TrafficLightState next = nextState(currentState);
-        switchTo(next);
-    }
-}
-*/
-
 package com.myteam.traffic.light;
 
 import java.util.Optional;
@@ -33,19 +12,6 @@ public class CountdownLight extends TrafficLight {
 
     public CountdownLight(int redTime, int greenTime, int yellowTime) {
         super(redTime, greenTime, yellowTime);
-    }
-
-    /**
-     * Mỗi giây: giảm bộ đếm. Khi hết giờ: chuyển trạng thái.
-     */
-
-    @Override
-    public void tick() {
-        if (secondsRemaining > 1) {
-            secondsRemaining--;
-            return;
-        }
-        switchTo(nextState(currentState));
     }
 
     /**
