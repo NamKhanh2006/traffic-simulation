@@ -100,9 +100,20 @@ public class IntersectionNavigator {
 
             double dx = other.getPosition().getX() - mergeX;
             double dy = other.getPosition().getY() - mergeY;
+            double dist = Math.hypot(dx, dy);
 
-            if (Math.hypot(dx, dy) < MERGE_SAFE_DISTANCE) {
+            // Kiểm tra khoảng cách tại điểm nhập
+            if (dist < MERGE_SAFE_DISTANCE) {
                 return false;
+            }
+
+            // KIỂM TRA THÊM: nếu xe khác đang trên cùng quỹ đạo và ở phía trước nhưng quá gần
+            // (dựa vào pathProgress để ước lượng)
+            if (other.getActivePath() != null && other.getActivePath().getIntersection() == intersection) {
+                // Nếu xe khác đã đi vào giao lộ được một đoạn ngắn (pathProgress < 20) và quá gần
+                if (other.getPathProgress() < 20.0 && dist < 40.0) {
+                    return false;
+                }
             }
         }
         return true;
