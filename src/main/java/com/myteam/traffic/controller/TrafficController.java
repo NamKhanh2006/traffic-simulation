@@ -289,8 +289,34 @@ public class TrafficController {
 
         double dirMultiplier = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD) ? 1.0 : -1.0;
         double dp = (v.getSpeed() * deltaTime / seg.getLength()) * dirMultiplier;
-
-        v.setSegmentProgress(v.getSegmentProgress() + dp);
+        double newProgress = v.getSegmentProgress() + dp;
+    
+        // Giới hạn progress
+        if (newProgress > 1.0) newProgress = 1.0;
+        if (newProgress < 0.0) newProgress = 0.0;
+    
+        // Lấy vị trí dự kiến
+        double[] newPose = seg.getPositionOnLane(v.getCurrentLane().getIndex(), newProgress);
+        Position newPos = new Position(newPose[0], newPose[1]);
+    
+        // Kiểm tra va chạm với xe cùng làn, cùng chiều
+        for (Vehicle other : vehicles) {
+            if (other == v) continue;
+            if (other.getCurrentSegment() == seg && other.getCurrentLane().getIndex() == v.getCurrentLane().getIndex()) {
+                // Xác định xe phía trước
+                boolean isAhead = (dirMultiplier > 0 && other.getSegmentProgress() > v.getSegmentProgress()) ||
+                                  (dirMultiplier < 0 && other.getSegmentProgress() < v.getSegmentProgress());
+                if (isAhead) {
+                    double dist = newPos.distanceTo(other.getPosition());
+                    if (dist < 6.0) { // Ngưỡng va chạm (2/3 chiều dài xe)
+                        // Không di chuyển, thậm chí phanh thêm
+                        v.setSpeed(Math.max(0, v.getSpeed() - HARD_BRAKE * deltaTime));
+                        return;
+                    }
+                }
+            }
+        } 
+        v.setSegmentProgress(newProgress);
         v.syncPositionFromSegment();
     }
 
