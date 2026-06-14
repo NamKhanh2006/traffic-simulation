@@ -1,64 +1,3 @@
-/*
-package com.myteam.traffic.light;
-
-public abstract class TrafficLight {
-    protected final int redTime;
-    protected final int greenTime;
-    protected final int yellowTime;
-    protected TrafficLightState currentState;
-    protected int secondsRemaining;
-
-    public TrafficLight(int redTime, int greenTime, int yellowTime) {
-        this.redTime = redTime;
-        this.greenTime = greenTime;
-        this.yellowTime = yellowTime;
-        this.currentState = TrafficLightState.RED;
-        this.secondsRemaining = redTime;
-    }
-
-    public TrafficLightState getCurrentState() {
-        return currentState;
-    }
-
-    public int getSecondsRemaining() {
-        return secondsRemaining;
-    }
-
-    public abstract void changeState();
-
-    protected void switchTo(TrafficLightState nextState) {
-        this.currentState = nextState;
-        this.secondsRemaining = getDurationForState(nextState);
-    }
-
-    protected int getDurationForState(TrafficLightState state) {
-        switch (state) {
-            case RED:
-                return redTime;
-            case GREEN:
-                return greenTime;
-            case YELLOW:
-                return yellowTime;
-            default:
-                throw new IllegalArgumentException("Unknown light state: " + state);
-        }
-    }
-
-    protected TrafficLightState nextState(TrafficLightState state) {
-        switch (state) {
-            case RED:
-                return TrafficLightState.GREEN;
-            case GREEN:
-                return TrafficLightState.YELLOW;
-            case YELLOW:
-                return TrafficLightState.RED;
-            default:
-                throw new IllegalArgumentException("Unknown light state: " + state);
-        }
-    }
-}
-*/
-
 package com.myteam.traffic.light;
 
 import java.util.Optional;
@@ -85,6 +24,9 @@ public abstract class TrafficLight {
     protected final int greenTime;
     protected final int yellowTime;
 
+    protected double worldX;
+    protected double worldY;
+
     protected TrafficLightState currentState;
 
     /**
@@ -92,6 +34,11 @@ public abstract class TrafficLight {
      * Luôn đếm đúng thực tế — không bị bóp méo vì mục đích hiển thị.
      */
     protected int secondsRemaining;
+
+    /**
+     * Tích lũy thời gian lẻ giữa các lần tick (giây).
+     */
+    private double timeAccumulator = 0;
 
     public TrafficLight(int redTime, int greenTime, int yellowTime) {
         this.redTime          = redTime;
@@ -106,10 +53,27 @@ public abstract class TrafficLight {
     // =========================================================
 
     /**
-     * Gọi mỗi giây bởi World/Controller (không phải mỗi frame render).
-     * Mỗi subclass tự quyết định khi nào chuyển trạng thái.
+     * Cập nhật trạng thái đèn dựa trên thời gian trôi qua.
+     * @param dt Thời gian trôi qua kể từ tick trước (giây).
      */
-    public abstract void tick();
+    public void tick(double dt) {
+        timeAccumulator += dt;
+        while (timeAccumulator >= 1.0) {
+            timeAccumulator -= 1.0;
+            onSecondPassed();
+        }
+    }
+
+    /**
+     * Logic thực hiện khi tròn 1 giây trôi qua.
+     */
+    protected void onSecondPassed() {
+        if (secondsRemaining > 1) {
+            secondsRemaining--;
+        } else {
+            switchTo(nextState(currentState));
+        }
+    }
 
     // =========================================================
     // Điều khiển thủ công (người dùng click vào đèn)
@@ -121,6 +85,7 @@ public abstract class TrafficLight {
      */
     public void forceNextState() {
         switchTo(nextState(currentState));
+        timeAccumulator = 0; // Reset bộ đếm khi ép chuyển trạng thái
     }
 
     // =========================================================
@@ -141,6 +106,14 @@ public abstract class TrafficLight {
     // =========================================================
     // Getters
     // =========================================================
+
+    public double getWorldX() { return worldX; }
+    public double getWorldY() { return worldY; }
+
+    public void setWorldPosition(double x, double y) {
+        this.worldX = x;
+        this.worldY = y;
+    }
 
     public TrafficLightState getCurrentState()  { return currentState; }
 
