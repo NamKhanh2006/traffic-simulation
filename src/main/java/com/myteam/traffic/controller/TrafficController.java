@@ -374,6 +374,23 @@ public class TrafficController {
 
         intersectionNavigator.applyExit(v);
         if (v.getSpeed() < 10.0) v.setSpeed(INITIAL_SPEED);
+    
+        // Sau khi đặt xe vào segment, kiểm tra nếu quá gần xe khác thì dịch lùi
+        for (Vehicle other : vehicles) {
+            if (other == v) continue;
+            if (other.getCurrentSegment() == v.getCurrentSegment() && 
+                other.getCurrentLane() == v.getCurrentLane()) {
+                double dist = v.getPosition().distanceTo(other.getPosition());
+                if (dist < 15.0) {
+                    // Dịch lùi lại 10 mét
+                    double offset = 10.0 / v.getCurrentSegment().getLength();
+                    double newProgress = v.getSegmentProgress() - offset;
+                    v.setSegmentProgress(Math.max(0, newProgress));
+                    v.syncPositionFromSegment();
+                    break;
+                }
+            }
+        }
     }
 
     // FIX LỖI GIẬT CỤC: Xe chỉ tuân theo đèn giao thông khi đang đứng sát mép giao lộ
