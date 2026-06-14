@@ -9,15 +9,11 @@ import com.myteam.traffic.vehicle.Vehicle;
  */
 public class PathFollower {
 
-    public void advance(Vehicle vehicle) {
-        if (vehicle.getSpeed() <= 0) {
-            return;
-        }
+    public void advance(Vehicle vehicle, double deltaTime) {
+        if (vehicle.getSpeed() <= 0) return;
         IntersectionPath path = vehicle.getActivePath();
-        if (path == null) {
-            return;
-        }
-        double nextS = vehicle.getPathProgress() + vehicle.getSpeed();
+        if (path == null) return;
+        double nextS = vehicle.getPathProgress() + vehicle.getSpeed() * deltaTime;
         vehicle.setPathProgress(nextS);
         syncPose(vehicle, path, nextS);
     }

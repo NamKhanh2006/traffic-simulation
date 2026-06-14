@@ -83,10 +83,16 @@ public class TrafficController {
 
         for (TrafficLight light : lights) light.tick();
         Map<Vehicle, Position> snapshot = takePositionSnapshot();
+        Map<Vehicle, Double> pathProgressSnapshot = new HashMap<>();
+        Map<Vehicle, Double> speedSnapshot = new HashMap<>();
+        for (Vehicle v : vehicles) {
+            pathProgressSnapshot.put(v, v.getPathProgress());
+            speedSnapshot.put(v, v.getSpeed());
+        }
 
         for (Vehicle v : new ArrayList<>(vehicles)) {
             autoSetPlannedExit(v);
-            RoadContext ctx = buildContext(v, snapshot);
+            RoadContext ctx = buildContext(v, snapshot, pathProgressSnapshot, speedSnapshot, deltaTime);
             Action proposed = v.getBehavior().decideAction(v, ctx);
             Action action = isVehicleAllowed(v, proposed, ctx)
                     ? proposed
@@ -126,7 +132,8 @@ public class TrafficController {
         return Collections.unmodifiableMap(snapshot);
     }
 
-    private RoadContext buildContext(Vehicle subject, Map<Vehicle, Position> snapshot) {
+    private RoadContext buildContext(Vehicle subject, Map<Vehicle, Position> snapshot, Map<Vehicle, Double> pathProgressSnapshot,
+                                  Map<Vehicle, Double> speedSnapshot, double deltaTime) {
         TrafficLightState lightState = getCurrentLightState(subject);
         List<Vehicle> nearby = findNearbyVehicles(subject, snapshot);
         return new RoadContext.Builder()
@@ -136,6 +143,9 @@ public class TrafficController {
                 .currentSegment(subject.getCurrentSegment())
                 .nearbyVehicles(nearby)
                 .positionSnapshot(snapshot)
+                .pathProgressSnapshot(pathProgressSnapshot)
+                .speedSnapshot(speedSnapshot)
+                .deltaTime(deltaTime)
                 .build();
     }
 
@@ -238,7 +248,7 @@ public class TrafficController {
                             seg.getLanes().get(currentIdx - 1).getDirection() == v.getCurrentLane().getDirection()) {
                         newIdx = currentIdx - 1;
                     }
-                    if (newIdx != -1 && isLaneSafeToEnter(v, seg, newIdx, 60.0)) {
+                    if (newIdx != -1 && isLaneSafeToEnter(v, seg, newIdx, 5.0)) {
                         v.changeLaneIndex(newIdx);
                     }
                 }
@@ -250,7 +260,7 @@ public class TrafficController {
                     int leftIdx = v.getCurrentLane().getIndex() - 1;
                     if (leftIdx >= 0 &&
                             seg.getLanes().get(leftIdx).getDirection() == v.getCurrentLane().getDirection() &&
-                            isLaneSafeToEnter(v, seg, leftIdx, 60.0)) {
+                            isLaneSafeToEnter(v, seg, leftIdx, 5.0)) {
                         v.changeLaneIndex(leftIdx);
                     }
                 }
@@ -267,15 +277,70 @@ public class TrafficController {
         if (v.getSegmentProgress() < 0.0) v.setSegmentProgress(0.0);
     }
 
-    private boolean isLaneSafeToEnter(Vehicle v, RoadSegment seg, int targetLaneIdx, double safeRadius) {
+    /**
+     * Kiểm tra làn {@code targetLaneIdx} có an toàn để {@code v} chuyển vào không.
+     *
+     * Kiểm tra HAI HƯỚNG, vì bug cũ chỉ kiểm tra xe phía sau:
+     *
+     *   - Xe phía TRƯỚC trên làn đích: khoảng cách phải >= nửa chiều dài
+     *     của cả hai xe + margin. Nếu không kiểm tra điều này, v có thể
+     *     "cắt đầu" ngay trước mũi xe khác (gap ~ 0) — và ngay sau khi
+     *     đổi làn, xe đó trở thành "xe sau" của v và chạm vào đuôi v.
+     *
+     *   - Xe phía SAU trên làn đích: phải có đủ khoảng cách phanh
+     *     (braking distance) dựa trên tốc độ của xe đó, cộng thêm
+     *     nửa chiều dài hai xe — nếu không, v cắt vào ngay trước mũi
+     *     xe sau khiến xe sau không kịp phanh.
+     *
+     * @param extraMargin Khoảng đệm bổ sung (world units) ngoài kích thước xe,
+     *                     ví dụ 5.0 cho cảm giác "có khoảng hở" tự nhiên.
+     */
+    private boolean isLaneSafeToEnter(Vehicle v, RoadSegment seg, int targetLaneIdx, double extraMargin) {
+        double maxDecel = HARD_BRAKE;
+        double vHalfLen = vehicleLength(v) / 2.0;
+
         for (Vehicle other : vehicles) {
-            if (other != v && other.getCurrentSegment() == seg && other.getCurrentLane().getIndex() == targetLaneIdx) {
-                if (v.getPosition().distanceTo(other.getPosition()) < safeRadius) {
-                    return false;
-                }
+            if (other == v) continue;
+            if (other.getCurrentSegment() != seg) continue;
+            if (other.getCurrentLane() == null || other.getCurrentLane().getIndex() != targetLaneIdx) continue;
+
+            double otherHalfLen = vehicleLength(other) / 2.0;
+            double dist = v.getPosition().distanceTo(other.getPosition());
+
+            boolean otherIsAhead = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD)
+                    ? other.getSegmentProgress() > v.getSegmentProgress()
+                    : other.getSegmentProgress() < v.getSegmentProgress();
+
+            if (otherIsAhead) {
+                // Xe phía trước trên làn đích: không được "cắt đầu" sát đuôi xe đó
+                double minGap = vHalfLen + otherHalfLen + extraMargin;
+                if (dist < minGap) return false;
+            } else {
+                // Xe phía sau trên làn đích: phải có đủ khoảng cách phanh
+                double otherSpeed = other.getSpeed();
+                double brakingDist = (otherSpeed * otherSpeed) / (2 * maxDecel)
+                        + vHalfLen + otherHalfLen + extraMargin;
+                if (dist < brakingDist) return false;
             }
         }
         return true;
+    }
+
+    /**
+     * Ước lượng chiều dài xe (world units) theo loại xe.
+     *
+     * Dùng trong isLaneSafeToEnter() để tính khoảng cách an toàn dựa trên
+     * kích thước thực — xe to (FireTruck/Ambulance) cần khoảng hở lớn hơn
+     * xe máy khi chuyển làn để tránh chạm đuôi nhau.
+     */
+    private double vehicleLength(Vehicle v) {
+        return switch (v.getType()) {
+            case BICYCLE   -> 1.8;
+            case MOTORBIKE -> 2.2;
+            case CAR       -> 4.5;
+            case AMBULANCE -> 6.0;
+            case FIRETRUCK -> 8.0;
+        };
     }
 
     private void advanceOnSegment(Vehicle v, double deltaTime) {
@@ -308,7 +373,7 @@ public class TrafficController {
                                   (dirMultiplier < 0 && other.getSegmentProgress() < v.getSegmentProgress());
                 if (isAhead) {
                     double dist = newPos.distanceTo(other.getPosition());
-                    if (dist < 6.0) { // Ngưỡng va chạm (2/3 chiều dài xe)
+                    if (dist < 12.0) { // Ngưỡng va chạm (2/3 chiều dài xe)
                         // Không di chuyển, thậm chí phanh thêm
                         v.setSpeed(Math.max(0, v.getSpeed() - HARD_BRAKE * deltaTime));
                         return;
@@ -336,8 +401,9 @@ public class TrafficController {
         }
     
         if (v.getSpeed() > 0) {
-            v.setPathProgress(v.getPathProgress() + v.getSpeed() * deltaTime);
-            pathFollower.syncPose(v, path, v.getPathProgress());
+            //v.setPathProgress(v.getPathProgress() + v.getSpeed() * deltaTime);
+            //pathFollower.syncPose(v, path, v.getPathProgress());
+            pathFollower.advance(v, deltaTime);
         }
     }
 
@@ -376,7 +442,7 @@ public class TrafficController {
             // Kiểm tra xe đã có planned exit và đang ở gần (tránh hai xe cùng đợi)
             if (other.getPlannedExit() != PlannedExit.NONE && other.getCurrentSegment() == v.getCurrentSegment()) {
                 double dist = v.getPosition().distanceTo(other.getPosition());
-                if (dist < 25.0) {
+                if (dist < 40.0) {
                     return; // nhường cho xe đã chờ trước
                 }
             }

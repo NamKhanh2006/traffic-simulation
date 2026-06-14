@@ -66,18 +66,28 @@ public class SimulationView extends Canvas {
     // ── Mô phỏng (spawn + tick) ────────────────────────────────
     private VehicleSpawner spawner;
     private boolean simulationRunning = false;
+    private static final double FIXED_DT = 0.033;  // 30 ticks/second
 
     private final javafx.animation.AnimationTimer simLoop = new javafx.animation.AnimationTimer() {
         private long lastNanos = -1;
+        private double accumulator = 0.0;
+        
         @Override public void handle(long now) {
-            if (lastNanos < 0) { lastNanos = now; return; }
-            double dt = Math.min((now - lastNanos) / 1_000_000_000.0, 0.1);
+            if (lastNanos < 0) {
+                lastNanos = now;
+                return;
+            }
+            double frameTime = (now - lastNanos) / 1_000_000_000.0;
             lastNanos = now;
-            if (spawner != null) spawner.tick(dt);
-            if (controller != null) controller.tick(dt);
+            if (frameTime > 0.25) frameTime = 0.25; // giới hạn tránh vòng lặp quá dài
+            accumulator += frameTime;
+            while (simulationRunning && accumulator >= FIXED_DT) {
+                if (spawner != null) spawner.tick(FIXED_DT);
+                if (controller != null) controller.tick(FIXED_DT);
+                    accumulator -= FIXED_DT;
+            }
             redraw();
         }
-        @Override public void start() { lastNanos = -1; super.start(); }
     };
 
     public void setSpawner(VehicleSpawner spawner) {
@@ -96,7 +106,7 @@ public class SimulationView extends Canvas {
 
     /** Chạy 1 tick thủ công (vd. ngay sau khi thêm xe lúc đang pause) để cập nhật hiển thị. */
     public void stepOnce() {
-        if (controller != null) controller.tick(0.0);
+        if (controller != null) controller.tick(FIXED_DT);   // dùng cùng deltaTime
         redraw();
     }
 

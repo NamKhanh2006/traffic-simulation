@@ -83,6 +83,10 @@ public class RoadContext {
      */
     private final List<TrafficRule> localRules;
 
+    private final double deltaTime;
+    private final Map<Vehicle, Double> pathProgressSnapshot;
+    private final Map<Vehicle, Double> speedSnapshot;
+
     // =========================================================
     // Constructor — private, chỉ được tạo qua Builder
     // =========================================================
@@ -96,6 +100,9 @@ public class RoadContext {
         this.nearbyVehicles   = Collections.unmodifiableList(new ArrayList<>(builder.nearbyVehicles));
         this.positionSnapshot = Collections.unmodifiableMap(new HashMap<>(builder.positionSnapshot));
         this.localRules       = buildLocalRules(builder);
+        this.deltaTime        = builder.deltaTime;
+        this.pathProgressSnapshot = Collections.unmodifiableMap(new HashMap<>(builder.pathProgressSnapshot));
+        this.speedSnapshot = Collections.unmodifiableMap(new HashMap<>(builder.speedSnapshot));
     }
 
     // =========================================================
@@ -108,6 +115,13 @@ public class RoadContext {
     public Lane             getCurrentLane()      { return currentLane;      }
     public RoadSegment      getCurrentSegment()   { return currentSegment;   }
     public List<Vehicle>    getNearbyVehicles()   { return nearbyVehicles;   }
+    public double           getDeltaTime()       { return deltaTime;        }
+    public Optional<Double> getSnapshotPathProgress(Vehicle v) {
+        return Optional.ofNullable(pathProgressSnapshot.get(v));
+    }
+    public Optional<Double> getSnapshotSpeed(Vehicle v) {
+        return Optional.ofNullable(speedSnapshot.get(v));
+    }
 
     /**
      * Luật áp dụng theo làn / đoạn đường hiện tại của subject.
@@ -685,6 +699,10 @@ public class RoadContext {
         private List<Vehicle>          nearbyVehicles   = new ArrayList<>();
         private Map<Vehicle, Position> positionSnapshot = new HashMap<>();
         private List<TrafficRule>      explicitLocalRules = new ArrayList<>();
+        private double                 deltaTime        = 0.0;
+        private Map<Vehicle, Double> pathProgressSnapshot = new HashMap<>();
+        private Map<Vehicle, Double> speedSnapshot = new HashMap<>();
+
 
         /** Xe mà context này mô tả môi trường xung quanh. BẮT BUỘC phải set. */
         public Builder subject(Vehicle v) {
@@ -722,6 +740,11 @@ public class RoadContext {
             return this;
         }
 
+        public Builder deltaTime(double dt){
+            this.deltaTime = dt;
+            return this;
+        }
+
         /**
          * Thêm luật cục bộ tùy chỉnh (vd. rule gắn sẵn trên {@link RoadSegment} sau này).
          * Các rule suy ra từ {@code currentLane} / cao tốc vẫn được gộp thêm khi {@code build()}.
@@ -737,6 +760,16 @@ public class RoadContext {
             if (rule != null) {
                 this.explicitLocalRules.add(rule);
             }
+            return this;
+        }
+
+        public Builder pathProgressSnapshot(Map<Vehicle, Double> map) {
+            this.pathProgressSnapshot = map != null ? map : new HashMap<>();
+            return this;
+        }
+        
+        public Builder speedSnapshot(Map<Vehicle, Double> map) {
+            this.speedSnapshot = map != null ? map : new HashMap<>();
             return this;
         }
 
