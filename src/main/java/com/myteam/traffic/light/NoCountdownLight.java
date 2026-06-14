@@ -1,19 +1,3 @@
-//package com.myteam.traffic.light;
-
-/*
-public class NoCountdownLight extends TrafficLight {
-    public NoCountdownLight(int redTime, int greenTime, int yellowTime) {
-        super(redTime, greenTime, yellowTime);
-    }
-
-    @Override
-    public void changeState() {
-        TrafficLightState next = nextState(currentState);
-        switchTo(next);
-    }
-}
-*/
-
 package com.myteam.traffic.light;
 
 import java.util.Optional;
@@ -31,19 +15,6 @@ public class NoCountdownLight extends TrafficLight {
 
     public NoCountdownLight(int redTime, int greenTime, int yellowTime) {
         super(redTime, greenTime, yellowTime);
-    }
-
-    /**
-     * Cùng logic đếm giờ như {@link CountdownLight} —
-     * đợi hết thời gian rồi mới chuyển, không đổi ngay mỗi tick.
-     */
-    @Override
-    public void tick() {
-        if (secondsRemaining > 1) {
-            secondsRemaining--;
-            return;
-        }
-        switchTo(nextState(currentState));
     }
 
     /**
