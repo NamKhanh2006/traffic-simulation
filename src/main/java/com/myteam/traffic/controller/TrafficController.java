@@ -238,7 +238,7 @@ public class TrafficController {
                             seg.getLanes().get(currentIdx - 1).getDirection() == v.getCurrentLane().getDirection()) {
                         newIdx = currentIdx - 1;
                     }
-                    if (newIdx != -1 && isLaneSafeToEnter(v, seg, newIdx, 45.0)) {
+                    if (newIdx != -1 && isLaneSafeToEnter(v, seg, newIdx, 60.0)) {
                         v.changeLaneIndex(newIdx);
                     }
                 }
@@ -250,7 +250,7 @@ public class TrafficController {
                     int leftIdx = v.getCurrentLane().getIndex() - 1;
                     if (leftIdx >= 0 &&
                             seg.getLanes().get(leftIdx).getDirection() == v.getCurrentLane().getDirection() &&
-                            isLaneSafeToEnter(v, seg, leftIdx, 45.0)) {
+                            isLaneSafeToEnter(v, seg, leftIdx, 60.0)) {
                         v.changeLaneIndex(leftIdx);
                     }
                 }
