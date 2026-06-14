@@ -40,6 +40,7 @@ public abstract class Vehicle {
         this.speed = 0;
     }
 
+    /*
     // Getter và Setter cho type
     public VehicleType getType() {
         return type;
@@ -47,7 +48,7 @@ public abstract class Vehicle {
 
     public void setType(VehicleType type) {
         this.type = type;
-    }
+    }*/
 
 
     public void placeOnSegment(RoadSegment segment, Lane lane, double t) {

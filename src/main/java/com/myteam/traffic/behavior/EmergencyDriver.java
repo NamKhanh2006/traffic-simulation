@@ -4,6 +4,7 @@ import com.myteam.traffic.behavior.common.Action;
 import com.myteam.traffic.context.RoadContext;
 import com.myteam.traffic.vehicle.Vehicle;
 import com.myteam.traffic.behavior.common.DistanceKeeping;
+import com.myteam.traffic.vehicle.TravelMode;
 
 /**
  * Driver behaviour for emergency vehicles (ambulance, fire truck, police).
@@ -23,7 +24,7 @@ import com.myteam.traffic.behavior.common.DistanceKeeping;
  *   moving as much as possible.
  */
 public class EmergencyDriver implements DriverBehavior {
-
+    /*
     @Override
     public Action decideAction(Vehicle v, RoadContext context) {
         if (!v.isSirenOn()) {
@@ -43,6 +44,7 @@ public class EmergencyDriver implements DriverBehavior {
         }
         return Action.MOVE_FORWARD;
     }
+    */
 
     @Override
     public Action handleRejection(Vehicle v, RoadContext context, Action rejected) {
