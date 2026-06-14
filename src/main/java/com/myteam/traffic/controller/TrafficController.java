@@ -82,7 +82,7 @@ public class TrafficController {
             return reachedEnd && findUpcomingIntersection(v, v.getPosition()) == null;
         });
 
-        for (TrafficLight light : lights) light.tick();
+        for (TrafficLight light : lights) light.tick(deltaTime);
         Map<Vehicle, Position> snapshot = takePositionSnapshot();
         Map<Vehicle, Double> pathProgressSnapshot = new HashMap<>();
         Map<Vehicle, Double> speedSnapshot = new HashMap<>();
