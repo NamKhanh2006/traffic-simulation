@@ -1,25 +1,24 @@
-/*
 package com.myteam.traffic.light;
 
+import java.util.Optional;
+
+/**
+ * Đèn chỉ hiển thị đếm ngược khi thời gian còn lại ≤ 10 giây.
+ */
 public class TenSecLight extends TrafficLight {
+
     public TenSecLight(int redTime, int greenTime, int yellowTime) {
         super(redTime, greenTime, yellowTime);
     }
 
+    /**
+     * Chỉ trả về số giây nếu còn từ 10 trở xuống.
+     */
     @Override
-    public void changeState() {
-        if (secondsRemaining > 10) {
-            secondsRemaining = 10;
-            return;
+    public Optional<Integer> getCountdownDisplay() {
+        if (secondsRemaining <= 10) {
+            return Optional.of(secondsRemaining);
         }
-
-        if (secondsRemaining > 1) {
-            secondsRemaining--;
-            return;
-        }
-
-        TrafficLightState next = nextState(currentState);
-        switchTo(next);
+        return Optional.empty();
     }
 }
-*/
