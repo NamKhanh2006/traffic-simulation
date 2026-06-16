@@ -80,22 +80,32 @@ public class NormalDriver implements DriverBehavior {
     }
     */
     private Action handleIntersectionPath(Vehicle v, RoadContext context) {
-    IntersectionPath myPath = v.getActivePath();
-    if (myPath == null) return Action.ACCELERATE;
+        IntersectionPath myPath = v.getActivePath();
+        if (myPath == null) return Action.ACCELERATE;
 
-    Position myPos = context.getSnapshotPosition(v).orElse(v.getPosition());
-    
-    for (Vehicle other : context.getNearbyVehicles()) {
-        if (other == v) continue;
-        if (other.getTravelMode() != TravelMode.ON_INTERSECTION_PATH) continue;
-        
-        Position otherPos = context.getSnapshotPosition(other).orElse(other.getPosition());
-        double dist = myPos.distanceTo(otherPos);
-        if (dist < 30.0) {  // ngưỡng an toàn
+        Position myPos = context.getSnapshotPosition(v).orElse(v.getPosition());
+
+        for (Vehicle other : context.getNearbyVehicles()) {
+            if (other == v) continue;
+            if (other.getTravelMode() != TravelMode.ON_INTERSECTION_PATH) continue;
+
+            Position otherPos = context.getSnapshotPosition(other).orElse(other.getPosition());
+            double dist = myPos.distanceTo(otherPos);
+
+            if (dist < 30.0) { //Kiểm tra ngưỡng an toàn
+                return Action.STOP;
+            }
+        }
+
+        // Kiểm tra TTC với xe phía trước chung
+        Vehicle front = context.getNearestFrontVehicle();
+        if (front != null && DistanceKeeping.isImminentCollision(v, front)) {
             return Action.STOP;
         }
-    }
-    
+        if (front != null && DistanceKeeping.timeToCollision(v, front) < DistanceKeeping.SAFE_TTC) {
+            return Action.SLOW_DOWN;
+        }
+
         if (v.getSpeed() < v.getMaxSpeed()) return Action.ACCELERATE;
         return Action.MOVE_FORWARD;
     }
