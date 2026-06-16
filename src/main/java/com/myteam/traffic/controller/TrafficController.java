@@ -292,6 +292,8 @@ public class TrafficController {
             default -> advanceOnSegment(v, deltaTime);
         }
 
+        autoBalanceLane(v, deltaTime);
+
         if (v.getSegmentProgress() > 1.0) v.setSegmentProgress(1.0);
         if (v.getSegmentProgress() < 0.0) v.setSegmentProgress(0.0);
     }
@@ -521,4 +523,50 @@ public class TrafficController {
     }
 
     public List<Vehicle> getVehicles() { return Collections.unmodifiableList(vehicles); }
+
+    private void autoBalanceLane(Vehicle v, double deltaTime) {
+        // Chỉ áp dụng cho xe trên segment và đã hoàn thành chuyển làn trước đó
+        if (v.getTravelMode() != TravelMode.ON_SEGMENT) return;
+        if (v.getLaneChangeProgress() < 1.0) return;
+
+        RoadSegment seg = v.getCurrentSegment();
+        if (seg == null) return;
+        Lane currentLane = v.getCurrentLane();
+        if (currentLane == null) return;
+
+        int currentIdx = currentLane.getIndex();
+        int laneCount = seg.getLanes().size();
+        if (laneCount < 2) return;
+
+        // Đếm số lượng xe trên mỗi làn (chỉ tính cùng chiều)
+        int[] laneCounts = new int[laneCount];
+        for (Vehicle other : vehicles) {
+            if (other == v) continue;
+            if (other.getTravelMode() != TravelMode.ON_SEGMENT) continue;
+            if (other.getCurrentSegment() != seg) continue;
+            if (other.getCurrentLane() == null) continue;
+            if (other.getCurrentLane().getDirection() != currentLane.getDirection()) continue;
+            laneCounts[other.getCurrentLane().getIndex()]++;
+        }
+
+        // Tìm làn bên ít xe hơn (chênh lệch ≥ 2)
+        int targetIdx = -1;
+        int minCount = laneCounts[currentIdx];
+        if (currentIdx > 0 && laneCounts[currentIdx - 1] < minCount - 1) {
+            targetIdx = currentIdx - 1;
+            minCount = laneCounts[currentIdx - 1];
+        }
+        if (currentIdx + 1 < laneCount && laneCounts[currentIdx + 1] < minCount - 1) {
+            targetIdx = currentIdx + 1;
+        }
+        if (targetIdx == -1) return;
+
+        // Kiểm tra làn mục tiêu cùng hướng và đủ an toàn
+        Lane targetLane = seg.getLanes().get(targetIdx);
+        if (targetLane.getDirection() != currentLane.getDirection()) return;
+        if (!isLaneSafeToEnter(v, seg, targetIdx, 50.0)) return;
+
+        // Thực hiện chuyển làn
+        v.changeLaneIndex(targetIdx);
+    }
 }
