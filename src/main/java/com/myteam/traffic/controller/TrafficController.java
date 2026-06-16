@@ -118,22 +118,29 @@ public class TrafficController {
         Intersection upcoming = findUpcomingIntersection(v, v.getPosition());
         if (upcoming == null) return;
 
-        Lane currentLane = v.getCurrentLane();
-        // Lấy danh sách các hướng được phép trên làn này
-        Set<Lane.Movement> allowed = currentLane.getAllowedMovements();
-        if (allowed.isEmpty()) return; // Không có hướng nào được phép → không đặt exit
+        int roadCount = upcoming.getRoadCount();
 
-        // Xây dựng danh sách PlannedExit khả dụng
+        // Nếu giao lộ có từ 5 nhánh trở lên → chọn ngẫu nhiên (bao gồm chéo)
+        if (roadCount >= 5) {
+            v.setPlannedExit(PlannedExit.RANDOM);
+            return;
+        }
+
+        // Với giao lộ 3 hoặc 4 nhánh, dùng logic cũ (ưu tiên thẳng, trái, phải)
+        Lane currentLane = v.getCurrentLane();
+        Set<Lane.Movement> allowed = currentLane.getAllowedMovements();
         List<PlannedExit> possible = new ArrayList<>();
+
         if (allowed.contains(Lane.Movement.STRAIGHT)) possible.add(PlannedExit.STRAIGHT);
         if (allowed.contains(Lane.Movement.LEFT)) possible.add(PlannedExit.LEFT);
         if (allowed.contains(Lane.Movement.RIGHT)) possible.add(PlannedExit.RIGHT);
-        if (allowed.contains(Lane.Movement.U_TURN)) possible.add(PlannedExit.U_TURN);
-        // Có thể thêm U_TURN nếu cần (nhưng cần kiểm tra marking)
 
-        if (possible.isEmpty()) return;
+        if (possible.isEmpty()) {
+            v.setPlannedExit(PlannedExit.STRAIGHT);
+            return;
+        }
 
-        // Chọn ngẫu nhiên trong các hướng được phép (có thể theo tỉ lệ)
+        // Chọn ngẫu nhiên trong các hướng được phép (có thể tỉ lệ)
         PlannedExit exit = possible.get(random.nextInt(possible.size()));
         v.setPlannedExit(exit);
     }
