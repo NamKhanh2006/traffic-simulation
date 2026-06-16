@@ -83,9 +83,14 @@ public class EmergencyDriver implements DriverBehavior {
 
         if (front != null) {
             // Xe ưu tiên bóp còi giục dẹp đường khi có xe phía trước cản trở
-            if (Math.random() < 0.05)
-                return Action.HONK;
-            return Action.OVERTAKE;
+            double dist = v.getPosition().distanceTo(front.getPosition());
+            if (dist < 40.0) {
+                if (Math.random() < 0.05) return Action.HONK;
+                return Action.STOP;
+            } else if (dist < 100.0) {
+                if (Math.random() < 0.05) return Action.HONK;
+                return Action.OVERTAKE;
+            }
         }
 
         // Thỉnh thoảng vẫn hú còi để cảnh báo từ xa

@@ -24,7 +24,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class TrafficController {
 
     // TĂNG LÊN 150.0 ĐỂ QUÉT ĐƯỢC CÁC VÒNG XUYẾN KHỔNG LỒ (Chống lỗi xóa nhầm xe)
-    private static final double APPROACHING_THRESHOLD = 150.0;
+    private static final double APPROACHING_THRESHOLD = 200.0;
     private static final double INITIAL_SPEED = 20.0;
     private static final double NORMAL_ACCEL  = 8.0;
     private static final double NORMAL_BRAKE  = 12.0;

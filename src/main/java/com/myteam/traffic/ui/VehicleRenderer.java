@@ -7,14 +7,14 @@ import javafx.scene.paint.Color;
 public class VehicleRenderer {
 
     // Kích thước (L = Chiều dài trục X, W = Chiều rộng trục Y)
-    private static final double CAR_L   = 20.0;
-    private static final double CAR_W   = 10.0;
-    private static final double MOTO_L  = 12.0;
-    private static final double MOTO_W  = 5.0;
-    private static final double BIKE_L  = 10.0;
-    private static final double BIKE_W  = 4.0;
-    private static final double TRUCK_L = 28.0;
-    private static final double TRUCK_W = 12.0;
+    public static final double CAR_L   = 20.0;
+    public static final double CAR_W   = 10.0;
+    public static final double MOTO_L  = 12.0;
+    public static final double MOTO_W  = 5.0;
+    public static final double BIKE_L  = 10.0;
+    public static final double BIKE_W  = 4.0;
+    public static final double TRUCK_L = 28.0;
+    public static final double TRUCK_W = 12.0;
 
     private com.myteam.traffic.controller.VehicleSpawner spawner;
 

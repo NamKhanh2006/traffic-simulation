@@ -179,9 +179,25 @@ public abstract class Vehicle {
     public double getY() { return position.getY(); }
     public Direction getDirection() { return direction; }
     public void setDirection(Direction direction) { this.direction = direction; }
-    public double getWidth() { return width; }
+    public double getWidth() {
+        if (type == null) return com.myteam.traffic.ui.VehicleRenderer.CAR_L;
+        return switch (type) {
+            case MOTORBIKE         -> com.myteam.traffic.ui.VehicleRenderer.MOTO_L;
+            case BICYCLE           -> com.myteam.traffic.ui.VehicleRenderer.BIKE_L;
+            case AMBULANCE, FIRETRUCK -> com.myteam.traffic.ui.VehicleRenderer.TRUCK_L;
+            default                -> com.myteam.traffic.ui.VehicleRenderer.CAR_L;
+        };
+    }
     public void setWidth(double width) { this.width = width; }
-    public double getHeight() { return height; }
+    public double getHeight() {
+        if (type == null) return com.myteam.traffic.ui.VehicleRenderer.CAR_W;
+        return switch (type) {
+            case MOTORBIKE         -> com.myteam.traffic.ui.VehicleRenderer.MOTO_W;
+            case BICYCLE           -> com.myteam.traffic.ui.VehicleRenderer.BIKE_W;
+            case AMBULANCE, FIRETRUCK -> com.myteam.traffic.ui.VehicleRenderer.TRUCK_W;
+            default                -> com.myteam.traffic.ui.VehicleRenderer.CAR_W;
+        };
+    }
     public void setHeight(double height) { this.height = height; }
     public double getSpeed() { return speed; }
     public void setSpeed(double speed) { this.speed = Math.max(0, Math.min(maxSpeed, speed)); }
