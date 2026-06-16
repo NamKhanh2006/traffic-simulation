@@ -109,20 +109,30 @@ public class TrafficController {
         if (v.getPlannedExit() != PlannedExit.NONE) return;
 
         boolean nearEnd = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD)
-                ? v.getSegmentProgress() > 0.85
-                : v.getSegmentProgress() < 0.15;
+            ? v.getSegmentProgress() > 0.85
+            : v.getSegmentProgress() < 0.15;
 
         if (!nearEnd) return;
 
         Intersection upcoming = findUpcomingIntersection(v, v.getPosition());
         if (upcoming == null) return;
 
-        double r = random.nextDouble();
-        PlannedExit exit;
-        if (r < 0.50)      exit = PlannedExit.STRAIGHT;
-        else if (r < 0.75) exit = PlannedExit.LEFT;
-        else               exit = PlannedExit.RIGHT;
+        Lane currentLane = v.getCurrentLane();
+        // Lấy danh sách các hướng được phép trên làn này
+        Set<Lane.Movement> allowed = currentLane.getAllowedMovements();
+        if (allowed.isEmpty()) return; // Không có hướng nào được phép → không đặt exit
 
+        // Xây dựng danh sách PlannedExit khả dụng
+        List<PlannedExit> possible = new ArrayList<>();
+        if (allowed.contains(Lane.Movement.STRAIGHT)) possible.add(PlannedExit.STRAIGHT);
+        if (allowed.contains(Lane.Movement.LEFT)) possible.add(PlannedExit.LEFT);
+        if (allowed.contains(Lane.Movement.RIGHT)) possible.add(PlannedExit.RIGHT);
+        // Có thể thêm U_TURN nếu cần (nhưng cần kiểm tra marking)
+
+        if (possible.isEmpty()) return;
+
+        // Chọn ngẫu nhiên trong các hướng được phép (có thể theo tỉ lệ)
+        PlannedExit exit = possible.get(random.nextInt(possible.size()));
         v.setPlannedExit(exit);
     }
 
