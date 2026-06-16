@@ -108,9 +108,10 @@ public class TrafficController {
         if (v.getTravelMode() != TravelMode.ON_SEGMENT) return;
         if (v.getPlannedExit() != PlannedExit.NONE) return;
 
+        // Ngưỡng gần cuối đường (giảm xuống 0.7 để đặt hướng sớm hơn)
         boolean nearEnd = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD)
-            ? v.getSegmentProgress() > 0.85
-            : v.getSegmentProgress() < 0.15;
+            ? v.getSegmentProgress() > 0.70
+            : v.getSegmentProgress() < 0.30;
 
         if (!nearEnd) return;
 
@@ -127,6 +128,7 @@ public class TrafficController {
         if (allowed.contains(Lane.Movement.STRAIGHT)) possible.add(PlannedExit.STRAIGHT);
         if (allowed.contains(Lane.Movement.LEFT)) possible.add(PlannedExit.LEFT);
         if (allowed.contains(Lane.Movement.RIGHT)) possible.add(PlannedExit.RIGHT);
+        if (allowed.contains(Lane.Movement.U_TURN)) possible.add(PlannedExit.U_TURN);
         // Có thể thêm U_TURN nếu cần (nhưng cần kiểm tra marking)
 
         if (possible.isEmpty()) return;
