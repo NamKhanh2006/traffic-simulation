@@ -92,7 +92,7 @@ public class NormalDriver implements DriverBehavior {
             Position otherPos = context.getSnapshotPosition(other).orElse(other.getPosition());
             double dist = myPos.distanceTo(otherPos);
 
-            if (dist < 30.0) { //Kiểm tra ngưỡng an toàn
+            if (dist < 45.0) { //Kiểm tra ngưỡng an toàn
                 return Action.STOP;
             }
         }
@@ -114,10 +114,14 @@ public class NormalDriver implements DriverBehavior {
         Vehicle front = context.getNearestFrontVehicle();
 
         if (front != null) {
-            if (DistanceKeeping.isImminentCollision(v, front)) {
+            double gap = v.getPosition().distanceTo(front.getPosition());
+            
+            // Nếu khoảng cách thực tế quá gần (dưới 1/2 SAFE_DISTANCE) hoặc sắp đâm (TTC < 1.0)
+            if (gap < RoadContext.SAFE_DISTANCE * 0.5 || DistanceKeeping.isImminentCollision(v, front)) {
                 return Action.STOP;
             }
-            if (DistanceKeeping.timeToCollision(v, front) < DistanceKeeping.SAFE_TTC) {
+            // Nếu chưa quá gần nhưng vi phạm khoảng cách an toàn, hoặc TTC < 2.0
+            if (gap < RoadContext.SAFE_DISTANCE || DistanceKeeping.timeToCollision(v, front) < DistanceKeeping.SAFE_TTC) {
                 return Action.SLOW_DOWN;
             }
             if (front.getSpeed() < v.getSpeed() &&

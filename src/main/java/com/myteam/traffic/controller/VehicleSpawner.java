@@ -11,7 +11,7 @@ import java.util.*;
 public class VehicleSpawner {
 
     // Khoảng cách an toàn để không đẻ xe đè lên nhau
-    private static final double MIN_SPAWN_CLEARANCE = 60.0;
+    private static final double MIN_SPAWN_CLEARANCE = 150.0;
     public static final double FADE_DURATION = 1.5;
 
     private final TrafficController controller;

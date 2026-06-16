@@ -28,7 +28,7 @@ public class TrafficController {
     private static final double INITIAL_SPEED = 20.0;
     private static final double NORMAL_ACCEL  = 8.0;
     private static final double NORMAL_BRAKE  = 12.0;
-    private static final double HARD_BRAKE    = 35.0;
+    private static final double HARD_BRAKE    = 40.0;
 
     private final RoadNetwork network;
     private final IntersectionNavigator intersectionNavigator;
