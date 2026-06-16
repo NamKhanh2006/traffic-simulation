@@ -4,6 +4,7 @@ import com.myteam.traffic.behavior.DriverBehavior;
 import com.myteam.traffic.model.geometry.Direction;
 import com.myteam.traffic.model.geometry.Position;
 import com.myteam.traffic.vehicle.VehicleType;
+import com.myteam.traffic.ui.SoundManager;
 
 public class FireTruck extends EmergencyVehicle {
 
@@ -19,7 +20,7 @@ public class FireTruck extends EmergencyVehicle {
     @Override
     public void honk() {
         if (sirenOn) {
-            System.out.println(this.getType() + " hú còi dẹp đường: O e o e o e!!!");
+            SoundManager.playSound("firetruck_siren.mp3");
             // Ghi chú cho Team GUI: Khi còi bật, hiển thị hiệu ứng đèn quay chớp
         } else {
             super.honk();

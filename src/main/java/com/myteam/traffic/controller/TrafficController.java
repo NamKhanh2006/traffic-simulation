@@ -19,6 +19,7 @@ import com.myteam.traffic.vehicle.emergency.FireTruck;
 
 import java.util.*;
 import java.util.function.Supplier;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class TrafficController {
 
@@ -34,9 +35,9 @@ public class TrafficController {
     private final PathFollower pathFollower = new PathFollower();
     private final Random random = new Random();
 
-    private final List<Vehicle> vehicles = new ArrayList<>();
-    private final List<TrafficLight> lights = new ArrayList<>();
-    private final List<TrafficRule> globalRules = new ArrayList<>();
+    private final List<Vehicle> vehicles = new CopyOnWriteArrayList<>();
+    private final List<TrafficLight> lights = new CopyOnWriteArrayList<>();
+    private final List<TrafficRule> globalRules = new CopyOnWriteArrayList<>();
 
     public TrafficController(RoadNetwork network) {
         if (network == null) throw new IllegalArgumentException("Network không được null");
@@ -373,9 +374,9 @@ public class TrafficController {
 
         // Lấy vị trí dự kiến (bao gồm cả offset khi đang chuyển làn)
         double[] newPose;
-        if (v.getLaneChangeProgress() < 1.0 && v.previousLane != null) {
+        if (v.getLaneChangeProgress() < 1.0 && v.getPreviousLane() != null) {
             // Nếu đang chuyển làn, tính vị trí nội suy giữa làn cũ và làn mới
-            double[] fromPose = seg.getPositionOnLane(v.previousLane.getIndex(), newProgress);
+            double[] fromPose = seg.getPositionOnLane(v.getPreviousLane().getIndex(), newProgress);
             double[] toPose = seg.getPositionOnLane(v.getCurrentLane().getIndex(), newProgress);
             double t = v.getLaneChangeProgress();
             double x = fromPose[0] + (toPose[0] - fromPose[0]) * t;

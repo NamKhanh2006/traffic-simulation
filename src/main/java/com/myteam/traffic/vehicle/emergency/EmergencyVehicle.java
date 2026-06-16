@@ -4,6 +4,7 @@ import com.myteam.traffic.behavior.DriverBehavior;
 import com.myteam.traffic.model.geometry.Direction;
 import com.myteam.traffic.model.geometry.Position;
 import com.myteam.traffic.vehicle.Vehicle;
+import com.myteam.traffic.ui.SoundManager;
 
 public abstract class EmergencyVehicle extends Vehicle {
     protected boolean sirenOn; // Trạng thái còi ưu tiên
@@ -34,9 +35,9 @@ public abstract class EmergencyVehicle extends Vehicle {
     @Override
     public void honk() {
         if (sirenOn) {
-            System.out.println(this.getType() + " hú còi dẹp đường: Wee woo wee woo!!!");
+            SoundManager.playSound("ambulance_siren.mp3");
         } else {
-            System.out.println(this.getType() + " bíp bíp (chế độ thường)!");
+            SoundManager.playSound("car.mp3");
         }
     }
 }

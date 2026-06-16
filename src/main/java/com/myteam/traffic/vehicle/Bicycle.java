@@ -8,7 +8,7 @@ public class Bicycle extends Vehicle {
 
     public Bicycle(Position position, Direction direction, DriverBehavior behavior) {
         super(position, direction, behavior);
-        
+
         this.setWidth(1.8);
         this.setHeight(0.6);
         this.setMaxSpeed(8.0);
@@ -18,7 +18,6 @@ public class Bicycle extends Vehicle {
 
     @Override
     public void honk() {
-        System.out.println("Kính coong! (Bicycle)");
-        SoundManager.playSound("bicycle_bell.wav");
+        SoundManager.playSound("bicycle_bell.mp3");
     }
 }

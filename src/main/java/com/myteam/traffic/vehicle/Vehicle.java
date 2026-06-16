@@ -158,6 +158,8 @@ public abstract class Vehicle {
 
     public double getLaneChangeProgress() { return laneChangeProgress; }
     public void setLaneChangeProgress(double progress) { this.laneChangeProgress = progress; }
+    public Lane getPreviousLane() { return previousLane; }
+    public void setPreviousLane(Lane lane) { this.previousLane = lane; }
 
     public PlannedExit getPlannedExit() { return plannedExit; }
     public void setPlannedExit(PlannedExit plannedExit) { this.plannedExit = plannedExit != null ? plannedExit : PlannedExit.NONE; }

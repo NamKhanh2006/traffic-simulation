@@ -77,8 +77,13 @@ public class VehicleSpawner {
             if (!isClearToSpawn(cand.seg, cand.lane, cand.isForward)) continue;
 
             VehicleType type = pickWeightedVehicleType();
-            DriverBehavior behavior = (random.nextDouble() < aggressiveRatio)
+            DriverBehavior behavior;
+            if (type == VehicleType.AMBULANCE || type == VehicleType.FIRETRUCK) {
+                behavior = new EmergencyDriver();
+            } else {
+                behavior = (random.nextDouble() < aggressiveRatio)
                     ? new AggressiveDriver() : new NormalDriver();
+            }
 
             Vehicle v = doSpawn(cand.seg, cand.lane, cand.isForward, behavior, type);
             if (v != null) {
@@ -99,7 +104,12 @@ public class VehicleSpawner {
         for (SpawnCandidate cand : candidates) {
             if (!isClearToSpawn(cand.seg, cand.lane, cand.isForward)) continue;
 
-            DriverBehavior behavior = aggressive ? new AggressiveDriver() : new NormalDriver();
+            DriverBehavior behavior;
+            if (type == VehicleType.AMBULANCE || type == VehicleType.FIRETRUCK) {
+                behavior = new EmergencyDriver();
+            } else {
+                behavior = aggressive ? new AggressiveDriver() : new NormalDriver();
+            }
             Vehicle v = doSpawn(cand.seg, cand.lane, cand.isForward, behavior, type);
             if (v != null) {
                 spawnAlphaMap.put(v, 0.0);

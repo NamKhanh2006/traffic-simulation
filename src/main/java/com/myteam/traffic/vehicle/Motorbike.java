@@ -7,20 +7,18 @@ import com.myteam.traffic.ui.SoundManager;
 public class Motorbike extends Vehicle {
 
     public Motorbike(Position position, Direction direction, DriverBehavior behavior) {
-        
+
         super(position, direction, behavior);
-        
-        
-        this.setWidth(2.0);      
+
+        this.setWidth(2.0);
         this.setHeight(1.0);
-        this.setMaxSpeed(12.0);  
+        this.setMaxSpeed(12.0);
         this.setEmergency(false);
         this.setType(VehicleType.MOTORBIKE);
     }
 
     @Override
     public void honk() {
-        System.out.println("Tít tít! (Motorbike)");
-        SoundManager.playSound("motorbike_honk.wav");
+        SoundManager.playSound("motorbike.mp3");
     }
 }

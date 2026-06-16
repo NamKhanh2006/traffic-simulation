@@ -72,10 +72,28 @@ public class VehicleRenderer {
 
         // Nếu là xe ưu tiên (cứu hỏa/cứu thương), vẽ đèn còi trên nóc
         if (vehicle.isEmergency()) {
-            gc.setFill(Color.BLUE);
+            boolean sirenActive = true;
+            if (vehicle instanceof com.myteam.traffic.vehicle.emergency.EmergencyVehicle) {
+                sirenActive = ((com.myteam.traffic.vehicle.emergency.EmergencyVehicle) vehicle).isSirenOn();
+            }
+
+            // Đèn cơ bản
+            gc.setFill(Color.BLUE.darker());
             gc.fillRect(-2, -w / 2 + 1, 4, 3);
-            gc.setFill(Color.RED);
+            gc.setFill(Color.RED.darker());
             gc.fillRect(-2, w / 2 - 4, 4, 3);
+
+            // Hiệu ứng chớp sáng khi bật còi
+            if (sirenActive) {
+                long time = System.currentTimeMillis();
+                if ((time / 150) % 2 == 0) {
+                    gc.setFill(Color.RED);
+                    gc.fillRect(-3, -w / 2 + 0.5, 6, 4); // Chớp đỏ to hơn
+                } else {
+                    gc.setFill(Color.BLUE);
+                    gc.fillRect(-3, w / 2 - 4.5, 6, 4);  // Chớp xanh to hơn
+                }
+            }
         }
 
         gc.restore();
