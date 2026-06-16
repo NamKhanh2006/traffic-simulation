@@ -6,6 +6,6 @@ package com.myteam.traffic.ui;
  */
 public class TestLauncher {
     public static void main(String[] args) {
-        MediaTestApp.main(args);
+        SimulationApp.main(args);
     }
 }
