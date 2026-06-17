@@ -40,4 +40,13 @@ public abstract class EmergencyVehicle extends Vehicle {
             SoundManager.playSound("car.mp3");
         }
     }
+
+    /**
+     * Tắt còi khi xe bị xóa khỏi mô phỏng (đi hết đường).
+     */
+    public void stopSiren() {
+        this.sirenOn = false;
+        SoundManager.stopSound("ambulance_siren.mp3");
+        SoundManager.stopSound("firetruck_siren.mp3");
+    }
 }

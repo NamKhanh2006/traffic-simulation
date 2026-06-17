@@ -96,7 +96,14 @@ public class TrafficController {
                     ? v.getSegmentProgress() >= 1.0
                     : v.getSegmentProgress() <= 0.0;
 
-            return reachedEnd && findUpcomingIntersection(v, v.getPosition()) == null;
+            boolean shouldRemove = reachedEnd && findUpcomingIntersection(v, v.getPosition()) == null;
+            
+            // Tắt còi trước khi xóa xe ưu tiên
+            if (shouldRemove && v instanceof com.myteam.traffic.vehicle.emergency.EmergencyVehicle ev) {
+                ev.stopSiren();
+            }
+            
+            return shouldRemove;
         });
 
         for (TrafficLight light : lights)
