@@ -19,25 +19,24 @@ import com.myteam.traffic.vehicle.emergency.FireTruck;
 
 import java.util.*;
 import java.util.function.Supplier;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 public class TrafficController {
 
     // TĂNG LÊN 150.0 ĐỂ QUÉT ĐƯỢC CÁC VÒNG XUYẾN KHỔNG LỒ (Chống lỗi xóa nhầm xe)
-    private static final double APPROACHING_THRESHOLD = 200.0;
+    private static final double APPROACHING_THRESHOLD = 150.0;
     private static final double INITIAL_SPEED = 20.0;
     private static final double NORMAL_ACCEL  = 8.0;
     private static final double NORMAL_BRAKE  = 12.0;
-    private static final double HARD_BRAKE    = 40.0;
+    private static final double HARD_BRAKE    = 35.0;
 
     private final RoadNetwork network;
     private final IntersectionNavigator intersectionNavigator;
     private final PathFollower pathFollower = new PathFollower();
     private final Random random = new Random();
 
-    private final List<Vehicle> vehicles = new CopyOnWriteArrayList<>();
-    private final List<TrafficLight> lights = new CopyOnWriteArrayList<>();
-    private final List<TrafficRule> globalRules = new CopyOnWriteArrayList<>();
+    private final List<Vehicle> vehicles = new ArrayList<>();
+    private final List<TrafficLight> lights = new ArrayList<>();
+    private final List<TrafficRule> globalRules = new ArrayList<>();
 
     public TrafficController(RoadNetwork network) {
         if (network == null) throw new IllegalArgumentException("Network không được null");
@@ -93,7 +92,7 @@ public class TrafficController {
 
         for (Vehicle v : new ArrayList<>(vehicles)) {
             autoSetPlannedExit(v);
-            RoadContext ctx = buildContext(v, snapshot, pathProgressSnapshot, speedSnapshot, deltaTime);
+            RoadContext ctx = buildContext(v, snapshot, deltaTime);
             Action proposed = v.getBehavior().decideAction(v, ctx);
             Action action = isVehicleAllowed(v, proposed, ctx)
                     ? proposed
@@ -109,40 +108,21 @@ public class TrafficController {
         if (v.getTravelMode() != TravelMode.ON_SEGMENT) return;
         if (v.getPlannedExit() != PlannedExit.NONE) return;
 
-        // Ngưỡng gần cuối đường (giảm xuống 0.7 để đặt hướng sớm hơn)
         boolean nearEnd = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD)
-            ? v.getSegmentProgress() > 0.70
-            : v.getSegmentProgress() < 0.30;
+                ? v.getSegmentProgress() > 0.85
+                : v.getSegmentProgress() < 0.15;
 
         if (!nearEnd) return;
 
         Intersection upcoming = findUpcomingIntersection(v, v.getPosition());
         if (upcoming == null) return;
 
-        int roadCount = upcoming.getRoadCount();
+        double r = random.nextDouble();
+        PlannedExit exit;
+        if (r < 0.50)      exit = PlannedExit.STRAIGHT;
+        else if (r < 0.75) exit = PlannedExit.LEFT;
+        else               exit = PlannedExit.RIGHT;
 
-        // Nếu giao lộ có từ 5 nhánh trở lên → chọn ngẫu nhiên (bao gồm chéo)
-        if (roadCount >= 5) {
-            v.setPlannedExit(PlannedExit.RANDOM);
-            return;
-        }
-
-        // Với giao lộ 3 hoặc 4 nhánh, dùng logic cũ (ưu tiên thẳng, trái, phải)
-        Lane currentLane = v.getCurrentLane();
-        Set<Lane.Movement> allowed = currentLane.getAllowedMovements();
-        List<PlannedExit> possible = new ArrayList<>();
-
-        if (allowed.contains(Lane.Movement.STRAIGHT)) possible.add(PlannedExit.STRAIGHT);
-        if (allowed.contains(Lane.Movement.LEFT)) possible.add(PlannedExit.LEFT);
-        if (allowed.contains(Lane.Movement.RIGHT)) possible.add(PlannedExit.RIGHT);
-
-        if (possible.isEmpty()) {
-            v.setPlannedExit(PlannedExit.STRAIGHT);
-            return;
-        }
-
-        // Chọn ngẫu nhiên trong các hướng được phép (có thể tỉ lệ)
-        PlannedExit exit = possible.get(random.nextInt(possible.size()));
         v.setPlannedExit(exit);
     }
 
@@ -152,8 +132,7 @@ public class TrafficController {
         return Collections.unmodifiableMap(snapshot);
     }
 
-    private RoadContext buildContext(Vehicle subject, Map<Vehicle, Position> snapshot, Map<Vehicle, Double> pathProgressSnapshot,
-                                  Map<Vehicle, Double> speedSnapshot, double deltaTime) {
+    private RoadContext buildContext(Vehicle subject, Map<Vehicle, Position> snapshot, double deltaTime) {
         TrafficLightState lightState = getCurrentLightState(subject);
         List<Vehicle> nearby = findNearbyVehicles(subject, snapshot);
         return new RoadContext.Builder()
@@ -163,8 +142,6 @@ public class TrafficController {
                 .currentSegment(subject.getCurrentSegment())
                 .nearbyVehicles(nearby)
                 .positionSnapshot(snapshot)
-                .pathProgressSnapshot(pathProgressSnapshot)
-                .speedSnapshot(speedSnapshot)
                 .deltaTime(deltaTime)
                 .build();
     }
@@ -293,8 +270,6 @@ public class TrafficController {
             default -> advanceOnSegment(v, deltaTime);
         }
 
-        autoBalanceLane(v, deltaTime);
-
         if (v.getSegmentProgress() > 1.0) v.setSegmentProgress(1.0);
         if (v.getSegmentProgress() < 0.0) v.setSegmentProgress(0.0);
     }
@@ -317,26 +292,32 @@ public class TrafficController {
      * @param extraMargin Khoảng đệm bổ sung (world units) ngoài kích thước xe,
      *                     ví dụ 5.0 cho cảm giác "có khoảng hở" tự nhiên.
      */
-    private boolean isLaneSafeToEnter(Vehicle v, RoadSegment seg, int targetLaneIdx, double safeRadius) {
-        // Lấy vị trí dự kiến trên làn mới (tại vị trí hiện tại hoặc gần đó)
-        double currentT = v.getSegmentProgress();
-        double[] targetPose = seg.getPositionOnLane(targetLaneIdx, currentT);
-        double targetX = targetPose[0];
-        double targetY = targetPose[1];
+    private boolean isLaneSafeToEnter(Vehicle v, RoadSegment seg, int targetLaneIdx, double extraMargin) {
+        double maxDecel = HARD_BRAKE;
+        double vHalfLen = vehicleLength(v) / 2.0;
 
-        // Dùng AABB để kiểm tra va chạm
-        if (wouldCollide(v, targetX, targetY, seg, targetLaneIdx)) {
-            return false;
-        }
-    
-        // Kiểm tra khoảng cách phòng ngừa thêm
         for (Vehicle other : vehicles) {
             if (other == v) continue;
             if (other.getCurrentSegment() != seg) continue;
-            if (other.getCurrentLane().getIndex() != targetLaneIdx) continue;
+            if (other.getCurrentLane() == null || other.getCurrentLane().getIndex() != targetLaneIdx) continue;
+
+            double otherHalfLen = vehicleLength(other) / 2.0;
             double dist = v.getPosition().distanceTo(other.getPosition());
-            if (dist < safeRadius) {
-                return false;
+
+            boolean otherIsAhead = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD)
+                    ? other.getSegmentProgress() > v.getSegmentProgress()
+                    : other.getSegmentProgress() < v.getSegmentProgress();
+
+            if (otherIsAhead) {
+                // Xe phía trước trên làn đích: không được "cắt đầu" sát đuôi xe đó
+                double minGap = vHalfLen + otherHalfLen + extraMargin;
+                if (dist < minGap) return false;
+            } else {
+                // Xe phía sau trên làn đích: phải có đủ khoảng cách phanh
+                double otherSpeed = other.getSpeed();
+                double brakingDist = (otherSpeed * otherSpeed) / (2 * maxDecel)
+                        + vHalfLen + otherHalfLen + extraMargin;
+                if (dist < brakingDist) return false;
             }
         }
         return true;
@@ -364,38 +345,39 @@ public class TrafficController {
         if (seg == null || seg.getLength() < 1.0) return;
 
         if (v.getLaneChangeProgress() < 1.0) {
-            v.setLaneChangeProgress(Math.min(1.0, v.getLaneChangeProgress() + deltaTime / 1.5));
+            v.setLaneChangeProgress(v.getLaneChangeProgress() + deltaTime / 1.5);
+            if (v.getLaneChangeProgress() > 1.0) v.setLaneChangeProgress(1.0);
         }
 
         double dirMultiplier = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD) ? 1.0 : -1.0;
         double dp = (v.getSpeed() * deltaTime / seg.getLength()) * dirMultiplier;
         double newProgress = v.getSegmentProgress() + dp;
-        newProgress = Math.max(0, Math.min(1, newProgress));
-
-        // Lấy vị trí dự kiến (bao gồm cả offset khi đang chuyển làn)
-        double[] newPose;
-        if (v.getLaneChangeProgress() < 1.0 && v.getPreviousLane() != null) {
-            // Nếu đang chuyển làn, tính vị trí nội suy giữa làn cũ và làn mới
-            double[] fromPose = seg.getPositionOnLane(v.getPreviousLane().getIndex(), newProgress);
-            double[] toPose = seg.getPositionOnLane(v.getCurrentLane().getIndex(), newProgress);
-            double t = v.getLaneChangeProgress();
-            double x = fromPose[0] + (toPose[0] - fromPose[0]) * t;
-            double y = fromPose[1] + (toPose[1] - fromPose[1]) * t;
-            newPose = new double[]{x, y, toPose[2]};
-        } else {
-            newPose = seg.getPositionOnLane(v.getCurrentLane().getIndex(), newProgress);
-        }
     
-        double newX = newPose[0];
-        double newY = newPose[1];
-
-        // Kiểm tra va chạm với tất cả xe
-        if (wouldCollide(v, newX, newY, seg, v.getCurrentLane().getIndex())) {
-            // Nếu va chạm, phanh gấp và không di chuyển
-            v.setSpeed(Math.max(0, v.getSpeed() - HARD_BRAKE * deltaTime));
-            return;
-        }
-
+        // Giới hạn progress
+        if (newProgress > 1.0) newProgress = 1.0;
+        if (newProgress < 0.0) newProgress = 0.0;
+    
+        // Lấy vị trí dự kiến
+        double[] newPose = seg.getPositionOnLane(v.getCurrentLane().getIndex(), newProgress);
+        Position newPos = new Position(newPose[0], newPose[1]);
+    
+        // Kiểm tra va chạm với xe cùng làn, cùng chiều
+        for (Vehicle other : vehicles) {
+            if (other == v) continue;
+            if (other.getCurrentSegment() == seg && other.getCurrentLane().getIndex() == v.getCurrentLane().getIndex()) {
+                // Xác định xe phía trước
+                boolean isAhead = (dirMultiplier > 0 && other.getSegmentProgress() > v.getSegmentProgress()) ||
+                                  (dirMultiplier < 0 && other.getSegmentProgress() < v.getSegmentProgress());
+                if (isAhead) {
+                    double dist = newPos.distanceTo(other.getPosition());
+                    if (dist < 12.0) { // Ngưỡng va chạm (2/3 chiều dài xe)
+                        // Không di chuyển, thậm chí phanh thêm
+                        v.setSpeed(Math.max(0, v.getSpeed() - HARD_BRAKE * deltaTime));
+                        return;
+                    }
+                }
+            }
+        } 
         v.setSegmentProgress(newProgress);
         v.syncPositionFromSegment();
     }
@@ -518,88 +500,7 @@ public class TrafficController {
 
     public List<Vehicle> getVehicles() { return Collections.unmodifiableList(vehicles); }
 
-    private void autoBalanceLane(Vehicle v, double deltaTime) {
-        // Chỉ áp dụng cho xe trên segment và đã hoàn thành chuyển làn trước đó
-        if (v.getTravelMode() != TravelMode.ON_SEGMENT) return;
-        if (v.getLaneChangeProgress() < 1.0) return;
-
-        RoadSegment seg = v.getCurrentSegment();
-        if (seg == null) return;
-        Lane currentLane = v.getCurrentLane();
-        if (currentLane == null) return;
-
-        int currentIdx = currentLane.getIndex();
-        int laneCount = seg.getLanes().size();
-        if (laneCount < 2) return;
-
-        // Đếm số lượng xe trên mỗi làn (chỉ tính cùng chiều)
-        int[] laneCounts = new int[laneCount];
-        for (Vehicle other : vehicles) {
-            if (other == v) continue;
-            if (other.getTravelMode() != TravelMode.ON_SEGMENT) continue;
-            if (other.getCurrentSegment() != seg) continue;
-            if (other.getCurrentLane() == null) continue;
-            if (other.getCurrentLane().getDirection() != currentLane.getDirection()) continue;
-            laneCounts[other.getCurrentLane().getIndex()]++;
-        }
-
-        // Tìm làn bên ít xe hơn (chênh lệch ≥ 2)
-        int targetIdx = -1;
-        int minCount = laneCounts[currentIdx];
-        if (currentIdx > 0 && laneCounts[currentIdx - 1] < minCount - 1) {
-            targetIdx = currentIdx - 1;
-            minCount = laneCounts[currentIdx - 1];
-        }
-        if (currentIdx + 1 < laneCount && laneCounts[currentIdx + 1] < minCount - 1) {
-            targetIdx = currentIdx + 1;
-        }
-        if (targetIdx == -1) return;
-
-        // Kiểm tra làn mục tiêu cùng hướng và đủ an toàn
-        Lane targetLane = seg.getLanes().get(targetIdx);
-        if (targetLane.getDirection() != currentLane.getDirection()) return;
-        if (!isLaneSafeToEnter(v, seg, targetIdx, 50.0)) return;
-
-        // Thực hiện chuyển làn
-        v.changeLaneIndex(targetIdx);
-    }
-        /**
-     * Kiểm tra xem vị trí dự kiến của xe có va chạm với bất kỳ xe nào khác không.
-     * Sử dụng AABB (hình chữ nhật) để phát hiện va chạm chính xác theo kích thước thực của xe.
-     * @param v Xe đang kiểm tra
-     * @param newX Tọa độ X dự kiến
-     * @param newY Tọa độ Y dự kiến
-     * @param newSeg Segment dự kiến (có thể null nếu không quan tâm)
-     * @param newLaneIdx Làn dự kiến (có thể -1 nếu không quan tâm)
-     * @return true nếu có va chạm với bất kỳ xe nào khác
-     */
-    private boolean wouldCollide(Vehicle v, double newX, double newY, RoadSegment newSeg, int newLaneIdx) {
-        double halfW = v.getWidth() / 2.0;
-        double halfH = v.getHeight() / 2.0;
-        double left = newX - halfW;
-        double right = newX + halfW;
-        double top = newY - halfH;
-        double bottom = newY + halfH;
-
-        for (Vehicle other : vehicles) {
-            if (other == v) continue;
-            // Lọc sơ bộ: chỉ kiểm tra xe cùng segment và gần đủ
-            if (newSeg != null && other.getCurrentSegment() != newSeg) continue;
-        
-            double ox = other.getX();
-            double oy = other.getY();
-            double oHalfW = other.getWidth() / 2.0;
-            double oHalfH = other.getHeight() / 2.0;
-            double oLeft = ox - oHalfW;
-            double oRight = ox + oHalfW;
-            double oTop = oy - oHalfH;
-            double oBottom = oy + oHalfH;
-
-            // Kiểm tra AABB có chồng lấn không
-            if (right > oLeft && left < oRight && bottom > oTop && top < oBottom) {
-                return true;
-            }
-        }
-        return false;
+    public List<com.myteam.traffic.light.TrafficLight> getLights() {
+        return Collections.unmodifiableList(lights);
     }
 }

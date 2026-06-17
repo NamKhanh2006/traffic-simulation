@@ -39,6 +39,7 @@ public class CountdownLight extends TrafficLight {
      * Mỗi giây: giảm bộ đếm. Khi hết giờ: chuyển trạng thái.
      */
 
+    /*
     @Override
     public void tick() {
         if (secondsRemaining > 1) {
@@ -47,6 +48,7 @@ public class CountdownLight extends TrafficLight {
         }
         switchTo(nextState(currentState));
     }
+    */
 
     /**
      * Luôn hiển thị số giây còn lại.

@@ -111,7 +111,7 @@ public class SimulationApp extends Application {
 
         com.myteam.traffic.controller.TrafficController trafficController =
                 new com.myteam.traffic.controller.TrafficController(network);
-        trafficController.addLight(new com.myteam.traffic.light.NoCountdownLight(30,30,30));
+        //trafficController.addLight(new com.myteam.traffic.light.NoCountdownLight(30,30,30));
         com.myteam.traffic.controller.VehicleSpawner spawner =
                 new com.myteam.traffic.controller.VehicleSpawner(trafficController, network);
         view.setController(trafficController);
@@ -124,6 +124,7 @@ public class SimulationApp extends Application {
         ToggleButton btnModeInter  = modeBtn("🔀", "Giao lộ",    "Click để đặt nút giao thông");
         ToggleButton btnModeDelete = modeBtn("🗑️", "Xóa",        "Hover vào đường/nút giao → click để xóa");
         ToggleButton btnModeSim    = modeBtn("🚗", "Mô phỏng",   "Chạy mô phỏng & spawn xe theo tỷ lệ");
+        ToggleButton btnModeLight = modeBtn("🚦", "Đèn GT", "Click để đặt đèn giao thông");
 
         // Nút xóa màu đỏ khi active
         btnModeDelete.selectedProperty().addListener((o, was, is) -> {
@@ -135,11 +136,11 @@ public class SimulationApp extends Application {
         });
 
         ToggleGroup modeGroup = new ToggleGroup();
-        for (ToggleButton b : new ToggleButton[]{btnModePan, btnModeDraw, btnModeEdit, btnModeInter, btnModeDelete, btnModeSim})
+        for (ToggleButton b : new ToggleButton[]{btnModePan, btnModeDraw, btnModeEdit, btnModeInter, btnModeDelete, btnModeSim, btnModeLight})
             b.setToggleGroup(modeGroup);
         btnModePan.setSelected(true);
 
-        HBox modeBox = new HBox(4, btnModePan, btnModeDraw, btnModeEdit, btnModeInter, btnModeDelete, btnModeSim);
+        HBox modeBox = new HBox(4, btnModePan, btnModeDraw, btnModeEdit, btnModeInter, btnModeDelete, btnModeSim, btnModeLight);
         modeBox.setAlignment(Pos.CENTER_LEFT);
 
         Button btnZoomIn  = actionBtn("🔍+", "Phóng to (Scroll)");
@@ -174,10 +175,11 @@ public class SimulationApp extends Application {
         HBox ctxInter  = buildCtxIntersection(view);
         HBox ctxDelete = buildCtxDelete();
         HBox ctxSim    = buildCtxSimulation(view, spawner);
+        HBox ctxLight  = buildCtxTrafficLight(view);
 
-        StackPane ctxStack = new StackPane(ctxPan, ctxDraw, ctxEdit, ctxInter, ctxDelete, ctxSim);
+        StackPane ctxStack = new StackPane(ctxPan, ctxDraw, ctxEdit, ctxInter, ctxDelete, ctxSim, ctxLight);
         ctxPan.setVisible(true);
-        for (HBox h : new HBox[]{ctxDraw, ctxEdit, ctxInter, ctxDelete, ctxSim}) {
+        for (HBox h : new HBox[]{ctxDraw, ctxEdit, ctxInter, ctxDelete, ctxSim, ctxLight}) {
             h.setVisible(false);
             StackPane.setAlignment(h, Pos.CENTER_LEFT);
         }
@@ -193,12 +195,15 @@ public class SimulationApp extends Application {
             ctxInter .setVisible(nw == btnModeInter);
             ctxDelete.setVisible(nw == btnModeDelete);
             ctxSim   .setVisible(nw == btnModeSim);
+            ctxLight .setVisible(nw == btnModeLight);
+
             if (nw == btnModePan)    view.setInteractionType(SimulationView.InteractionType.PAN);
             if (nw == btnModeDraw)   view.setInteractionType(SimulationView.InteractionType.DRAW_ROAD);
             if (nw == btnModeEdit)   view.setInteractionType(SimulationView.InteractionType.EDIT_MARKINGS);
             if (nw == btnModeInter)  view.setInteractionType(SimulationView.InteractionType.PLACE_INTERSECTION);
             if (nw == btnModeDelete) view.setInteractionType(SimulationView.InteractionType.DELETE);
             if (nw == btnModeSim)    view.setInteractionType(SimulationView.InteractionType.PAN);
+            if (nw == btnModeLight)  view.setInteractionType(SimulationView.InteractionType.PLACE_TRAFFIC_LIGHT);
         });
 
         // ==== LAYOUT =========================================
@@ -773,6 +778,111 @@ public class SimulationApp extends Application {
         return b;
     }
 
+
+    // ============================================================
+    // CONTEXT BAR: ĐÈN GIAO THÔNG
+    // ============================================================
+
+    /**
+     * Context bar cho mode PLACE_TRAFFIC_LIGHT.
+     *
+     * Bố cục:
+     *   [Loại đèn ▾] | [Đỏ: NN s] [Xanh: NN s] [Vàng: N s] | 🚦 Click vào giao lộ để đặt đèn
+     *
+     * Mỗi khi người dùng thay đổi bất kỳ control nào, SimulationView
+     * được cập nhật ngay qua setPendingLight*() — không cần nút "Áp dụng".
+     * Lần click chuột tiếp theo sẽ dùng cấu hình mới nhất.
+     */
+    private HBox buildCtxTrafficLight(SimulationView view) {
+
+        // ── Loại đèn ─────────────────────────────────────────
+        Label lblType = ctxLabel("Loại đèn:");
+        ComboBox<String> typeBox = new ComboBox<>();
+        typeBox.getItems().addAll(
+                "🔢 Đếm ngược",           // CountdownLight
+                "🚫 Không đếm ngược",      // NoCountdownLight
+                "🔟 Hiện 10 giây cuối"     // TenSecLight
+        );
+        typeBox.setValue("🔢 Đếm ngược");
+        typeBox.setStyle("-fx-background-color:#2a3550; -fx-border-color:#3a4560; -fx-border-radius:4;");
+        typeBox.setPrefWidth(180);
+        styleCombo(typeBox);
+
+        // Ánh xạ display name → internal key
+        java.util.Map<String, String> typeKeys = new java.util.LinkedHashMap<>();
+        typeKeys.put("🔢 Đếm ngược",         "COUNTDOWN");
+        typeKeys.put("🚫 Không đếm ngược",    "NO_COUNTDOWN");
+        typeKeys.put("🔟 Hiện 10 giây cuối",  "TEN_SEC");
+
+        typeBox.valueProperty().addListener((ob, ov, nv) -> {
+            if (nv != null) view.setPendingLightType(typeKeys.getOrDefault(nv, "COUNTDOWN"));
+        });
+
+        // ── Thời gian phase ──────────────────────────────────
+        Label lblRed    = ctxLabel("🔴");
+        Spinner<Integer> spinRed   = timeSpinner(30);
+        Label lblRedS   = ctxLabel("s");
+
+        Label lblGreen  = ctxLabel("🟢");
+        Spinner<Integer> spinGreen = timeSpinner(30);
+        Label lblGreenS = ctxLabel("s");
+
+        Label lblYellow = ctxLabel("🟡");
+        Spinner<Integer> spinYellow = timeSpinner(5);
+        Label lblYellowS = ctxLabel("s");
+
+        // Callback chung: cập nhật view mỗi khi bất kỳ spinner nào thay đổi
+        Runnable syncTimings = () -> view.setPendingLightTimings(
+                spinRed.getValue(), spinGreen.getValue(), spinYellow.getValue());
+
+        spinRed   .valueProperty().addListener((ob, ov, nv) -> syncTimings.run());
+        spinGreen .valueProperty().addListener((ob, ov, nv) -> syncTimings.run());
+        spinYellow.valueProperty().addListener((ob, ov, nv) -> syncTimings.run());
+
+        // Gợi ý cho người dùng
+        Label hint = new Label("🚦  Click vào giao lộ để đặt đèn — snap tự động vào tâm giao lộ gần nhất");
+        hint.setStyle("-fx-text-fill:#e8d44d; -fx-font-size:11px; -fx-padding:0 0 0 12;");
+
+        HBox box = hbox(
+                lblType, typeBox,
+                vsep(),
+                lblRed, spinRed, lblRedS,
+                lblGreen, spinGreen, lblGreenS,
+                lblYellow, spinYellow, lblYellowS,
+                vsep(), hint);
+        box.setSpacing(6);
+        return box;
+    }
+
+    /**
+     * Spinner chỉnh số giây, phạm vi 1–300.
+     * Dùng chung cho ba phase đèn (đỏ / xanh / vàng).
+     */
+    private Spinner<Integer> timeSpinner(int defaultValue) {
+        Spinner<Integer> s = new Spinner<>(1, 300, defaultValue);
+        s.setEditable(true);
+        s.setPrefWidth(62);
+        s.setStyle("-fx-background-color:#2a3550; -fx-background-radius:4; " +
+                   "-fx-border-color:#3a4560; -fx-border-radius:4;");
+        s.getEditor().setStyle(
+                "-fx-background-color:#2a3550; -fx-text-fill:#e8d44d; " +
+                "-fx-font-weight:bold; -fx-font-size:12px; -fx-alignment:center;");
+        s.getEditor().setAlignment(javafx.geometry.Pos.CENTER);
+        // Commit khi focus mất hoặc Enter
+        s.getEditor().focusedProperty().addListener((ob, ov, focused) -> {
+            if (!focused) {
+                try {
+                    int v = Math.max(1, Math.min(300,
+                            Integer.parseInt(s.getEditor().getText().trim())));
+                    s.getValueFactory().setValue(v);
+                } catch (NumberFormatException ex) {
+                    s.getEditor().setText(s.getValue().toString());
+                }
+            }
+        });
+        s.getEditor().setOnAction(e -> s.getParent().requestFocus());
+        return s;
+    }
 
     // ============================================================
     // CONTEXT BAR: MÔ PHỎNG (spawn xe theo tỷ lệ)

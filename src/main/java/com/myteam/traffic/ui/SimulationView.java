@@ -23,7 +23,9 @@ import java.util.Stack;
 
 public class SimulationView extends Canvas {
 
-    public enum InteractionType { PAN, DRAW_ROAD, EDIT_MARKINGS, PLACE_INTERSECTION, DELETE }
+    public enum InteractionType { PAN, DRAW_ROAD, EDIT_MARKINGS, PLACE_INTERSECTION,
+        PLACE_TRAFFIC_LIGHT, // Add "Add Traffic Light" button
+        DELETE }
 
     /**
      * Loại giao lộ sẽ được đặt khi người dùng click trong mode PLACE_INTERSECTION.
@@ -62,6 +64,21 @@ public class SimulationView extends Canvas {
 
     private com.myteam.traffic.controller.TrafficController controller;
     private final VehicleRenderer vehicleRenderer = new VehicleRenderer();
+    private final TrafficLightRenderer trafficLightRenderer = new TrafficLightRenderer(this);
+
+    // ── Cấu hình đèn đang chờ đặt (PLACE_TRAFFIC_LIGHT mode) ──
+    /** "COUNTDOWN" | "NO_COUNTDOWN" | "TEN_SEC" */
+    private String pendingLightType     = "COUNTDOWN";
+    private int    pendingLightRed      = 30;
+    private int    pendingLightGreen    = 30;
+    private int    pendingLightYellow   = 5;
+
+    public void setPendingLightType(String type) { this.pendingLightType = type; }
+    public void setPendingLightTimings(int red, int green, int yellow) {
+        this.pendingLightRed    = red;
+        this.pendingLightGreen  = green;
+        this.pendingLightYellow = yellow;
+    }
 
     // ── Mô phỏng (spawn + tick) ────────────────────────────────
     private VehicleSpawner spawner;
@@ -451,6 +468,15 @@ public class SimulationView extends Canvas {
                 vehicleRenderer.render(gc, v, true);
             }
             gc.restore();
+        }
+
+        // -- Vẽ đèn giao thông --
+        // Đèn được vẽ SAU xe để overlay lên trên, dễ quan sát hơn.
+        // trafficLightRenderer.draw() nhận tọa độ world và tự convert sang screen.
+        if (controller != null) {
+            for (com.myteam.traffic.light.TrafficLight light : controller.getLights()) {
+                trafficLightRenderer.draw(gc, light, light.getWorldX(), light.getWorldY());
+            }
         }
 
         if (currentMode == InteractionType.DRAW_ROAD && isDrawing) {
@@ -1036,6 +1062,18 @@ public class SimulationView extends Canvas {
                 placeIntersectionAt(wx, wy);
                 updateRenderData();
 
+            } else if (currentMode == InteractionType.PLACE_TRAFFIC_LIGHT) {
+                // Đặt đèn giao thông tại vị trí click.
+                // Ưu tiên snap vào tâm intersection gần nhất — đèn đặt ở giao lộ
+                // thường hợp lý hơn đặt giữa đường.
+                double wx = toWorldX(e.getX()), wy = toWorldY(e.getY());
+                Intersection nearInter = network.findNearestIntersection(wx, wy, 80.0 / scale);
+                if (nearInter != null) {
+                    wx = nearInter.getCenterX();
+                    wy = nearInter.getCenterY();
+                }
+                placeTrafficLightAt(wx, wy);
+
             } else if (currentMode == InteractionType.DRAW_ROAD) {
                 saveSnapshot();
                 double rawX = toWorldX(e.getX()), rawY = toWorldY(e.getY());
@@ -1479,5 +1517,41 @@ public class SimulationView extends Canvas {
 
     public void setController(com.myteam.traffic.controller.TrafficController controller) {
         this.controller = controller;
+    }
+
+    // =========================================================
+    // Đặt đèn giao thông (PLACE_TRAFFIC_LIGHT mode)
+    // =========================================================
+
+    /**
+     * Đặt một đèn giao thông mới tại vị trí world (wx, wy).
+     *
+     * Được gọi từ mouse-click handler khi currentMode == PLACE_TRAFFIC_LIGHT.
+     * Loại đèn và thời gian phase được lấy từ các field pending* — đã được
+     * context bar trong SimulationApp cập nhật mỗi khi người dùng thay đổi
+     * ComboBox hoặc Spinner.
+     *
+     * Tại sao đặt logic này trong View thay vì App?
+     * View biết tọa độ world (đã qua toWorld()), còn App chỉ thấy tọa độ
+     * màn hình. Đặt ở đây nhất quán với cách placeIntersectionAt() hoạt động.
+     */
+    public void placeTrafficLightAt(double wx, double wy) {
+        if (controller == null) return;
+
+        com.myteam.traffic.light.TrafficLight light = switch (pendingLightType) {
+            case "NO_COUNTDOWN" ->
+                new com.myteam.traffic.light.NoCountdownLight(
+                        pendingLightRed, pendingLightGreen, pendingLightYellow);
+            case "TEN_SEC" ->
+                new com.myteam.traffic.light.TenSecLight(
+                        pendingLightRed, pendingLightGreen, pendingLightYellow);
+            default -> // "COUNTDOWN" và mọi giá trị khác
+                new com.myteam.traffic.light.CountdownLight(
+                        pendingLightRed, pendingLightGreen, pendingLightYellow);
+        };
+
+        light.setWorldPosition(wx, wy);
+        controller.addLight(light);
+        redraw();
     }
 }
