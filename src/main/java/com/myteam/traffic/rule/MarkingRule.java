@@ -103,7 +103,8 @@ public class MarkingRule implements TrafficRule {
      */
     private boolean isLaneCrossingAction(Action a) {
         return switch (a) {
-            case CHANGE_LANE, OVERTAKE, U_TURN -> true;
+            // Đã kiểm tra ở checkCommonActions
+            case CHANGE_LANE, OVERTAKE, U_TURN, YIELD -> true;
             default -> false;
         };
     }

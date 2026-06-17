@@ -10,5 +10,6 @@ public enum Action {
     HONK,
     TURN_LEFT,
     TURN_RIGHT,
-    U_TURN
+    U_TURN,
+    YIELD
 }

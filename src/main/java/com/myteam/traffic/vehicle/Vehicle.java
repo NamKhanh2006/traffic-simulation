@@ -210,8 +210,17 @@ public abstract class Vehicle {
     public void setEmergency(boolean emergency) { isEmergency = emergency; }
     public DriverBehavior getBehavior() { return behavior; }
     public void setBehavior(DriverBehavior behavior) { this.behavior = behavior; }
-    public abstract void honk();
+    private long lastHonkTime = 0;
 
+    public void tryHonk() {
+        long now = System.currentTimeMillis();
+        if (now - lastHonkTime > 5000) { // Cooldown 5 giây
+            honk();
+            lastHonkTime = now;
+        }
+    }
+
+    public abstract void honk();
     private static double clamp01(double t) { return Math.max(0.0, Math.min(1.0, t)); }
     public void setSegmentProgress(double progress) { this.segmentProgress = clamp01(progress); }
     public void setCurrentLane(Lane lane) { this.currentLane = lane; }
