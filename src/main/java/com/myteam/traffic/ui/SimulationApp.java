@@ -839,11 +839,25 @@ public class SimulationApp extends Application {
             if (!view.isSimulationRunning()) view.stepOnce();
         });
 
+        ToggleButton btnDelMode = smallToggle("🗑 Xóa xe", false);
+        btnDelMode.setOnAction(e -> {
+            view.setDeleteVehicleMode(btnDelMode.isSelected());
+        });
+
+        Button btnClearAll = actionBtn("🗑 Xóa tất cả", "Xóa toàn bộ phương tiện đang chạy");
+        btnClearAll.setOnAction(e -> {
+            if (view.getController() != null) {
+                view.getController().clearVehicles();
+                if (!view.isSimulationRunning()) view.stepOnce();
+            }
+        });
+
         HBox box = hbox(btnPlay,
                 vsep(), lblRate, sliderRate, lblRateVal,
                 vsep(), lblCar, sCar, lblMoto, sMoto, lblBike, sBike,
                 vsep(), lblAgg, sAgg,
-                vsep(), lblManual, typeBox, cbAggOne, btnAddOne);
+                vsep(), lblManual, typeBox, cbAggOne, btnAddOne,
+                vsep(), btnDelMode, btnClearAll);
         box.setSpacing(6);
         return box;
     }
