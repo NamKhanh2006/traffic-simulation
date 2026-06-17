@@ -86,7 +86,8 @@ public class EmergencyDriver implements DriverBehavior {
             double dist = v.getPosition().distanceTo(front.getPosition());
             if (dist < 40.0) {
                 if (Math.random() < 0.05) return Action.HONK;
-                return Action.STOP;
+                // Sửa lỗi: Thay vì STOP, xe ưu tiên phải tìm cách lách sang làn khác (OVERTAKE)
+                return Action.OVERTAKE;
             } else if (dist < 100.0) {
                 if (Math.random() < 0.05) return Action.HONK;
                 return Action.OVERTAKE;

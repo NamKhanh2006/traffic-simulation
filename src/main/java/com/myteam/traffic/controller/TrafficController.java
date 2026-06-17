@@ -254,46 +254,41 @@ public class TrafficController {
                 v.setSpeed(Math.max(0, v.getSpeed() - HARD_BRAKE * deltaTime));
                 if (v.getSpeed() > 0) advanceOnSegment(v, deltaTime);
             }
-            case CHANGE_LANE -> {
-                if (v.getLaneChangeProgress() >= 1.0) {
-                    int currentIdx = v.getCurrentLane().getIndex();
-                    int newIdx = -1;
-                    // Thử sang phải trước
-                    if (currentIdx + 1 < seg.getLanes().size() &&
-                            seg.getLanes().get(currentIdx + 1).getDirection() == v.getCurrentLane().getDirection()) {
-                        newIdx = currentIdx + 1;
-                    }
-                    // Nếu không thể sang phải, thử sang trái
-                    else if (currentIdx - 1 >= 0 &&
-                            seg.getLanes().get(currentIdx - 1).getDirection() == v.getCurrentLane().getDirection()) {
-                        newIdx = currentIdx - 1;
-                    }
-                    if (newIdx != -1 && isLaneSafeToEnter(v, seg, newIdx, 5.0)) {
-                        v.changeLaneIndex(newIdx);
-                    }
-                }
-                advanceOnSegment(v, deltaTime);
-            }
-            case OVERTAKE -> {
+            case CHANGE_LANE, OVERTAKE -> {
                 v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + NORMAL_ACCEL * deltaTime));
-                if (v.getLaneChangeProgress() >= 1.0) {
-                    int leftIdx = v.getCurrentLane().getIndex() - 1;
-                    if (leftIdx >= 0 &&
-                            seg.getLanes().get(leftIdx).getDirection() == v.getCurrentLane().getDirection() &&
-                            isLaneSafeToEnter(v, seg, leftIdx, 5.0)) {
-                        v.changeLaneIndex(leftIdx);
+                processOvertakeLane(v);
+                advanceOnSegment(v, deltaTime);
+            }
+            case YIELD -> {
+                if (v.getLaneChangeProgress() < 1.0) {
+                    // Đang dạt sang, giữ nguyên/tăng tốc để hoàn thành chuyển làn nhanh chóng
+                    v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + NORMAL_ACCEL * deltaTime));
+                } else {
+                    boolean yielded = false;
+                    int currentIdx = v.getCurrentLane().getIndex();
+                    int rightIdx = currentIdx + 1; // Chỉ ưu tiên dạt sang PHẢI
+                    if (rightIdx < seg.getLanes().size() && seg.getLanes().get(rightIdx).getDirection() == v.getCurrentLane().getDirection()) {
+                        if (isLaneSafeToEnter(v, seg, rightIdx, 5.0)) {
+                            v.changeLaneIndex(rightIdx);
+                            yielded = true;
+                        }
+                    }
+                    
+                    if (!yielded) {
+                        // Không thể dạt phải (do vướng xe hoặc hết đường), giảm tốc từ từ để xe ưu tiên lách sang trái vượt
+                        v.setSpeed(Math.max(10.0, v.getSpeed() - NORMAL_BRAKE * deltaTime));
+                    } else {
+                        v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + NORMAL_ACCEL * deltaTime));
                     }
                 }
                 advanceOnSegment(v, deltaTime);
             }
-            case HONK -> { v.honk(); advanceOnSegment(v, deltaTime); }
+            case HONK -> { v.tryHonk(); advanceOnSegment(v, deltaTime); }
             case TURN_LEFT -> { v.setPlannedExit(PlannedExit.LEFT); advanceOnSegment(v, deltaTime); }
             case TURN_RIGHT -> { v.setPlannedExit(PlannedExit.RIGHT); advanceOnSegment(v, deltaTime); }
             case U_TURN -> { v.setPlannedExit(PlannedExit.U_TURN); advanceOnSegment(v, deltaTime); }
             default -> advanceOnSegment(v, deltaTime);
         }
-
-        autoBalanceLane(v, deltaTime);
 
         if (v.getSegmentProgress() > 1.0) v.setSegmentProgress(1.0);
         if (v.getSegmentProgress() < 0.0) v.setSegmentProgress(0.0);
@@ -411,7 +406,7 @@ public class TrafficController {
                 if (v.getSpeed() < 10.0) v.setSpeed(10.0);
                 v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + NORMAL_ACCEL * deltaTime));
             }
-            case HONK -> v.honk();
+            case HONK -> v.tryHonk();
             default -> { if (v.getSpeed() < 10.0) v.setSpeed(10.0); }
         }
     
@@ -518,50 +513,50 @@ public class TrafficController {
 
     public List<Vehicle> getVehicles() { return Collections.unmodifiableList(vehicles); }
 
-    private void autoBalanceLane(Vehicle v, double deltaTime) {
-        // Chỉ áp dụng cho xe trên segment và đã hoàn thành chuyển làn trước đó
+    private void processOvertakeLane(Vehicle v) {
         if (v.getTravelMode() != TravelMode.ON_SEGMENT) return;
         if (v.getLaneChangeProgress() < 1.0) return;
+        if (v.getSpeed() < 10.0) return;
 
         RoadSegment seg = v.getCurrentSegment();
         if (seg == null) return;
-        Lane currentLane = v.getCurrentLane();
-        if (currentLane == null) return;
+        
+        Intersection upcoming = intersectionNavigator.peekUpcomingIntersection(v);
+        if (upcoming != null && v.getPosition().distanceTo(new Position(upcoming.getCenterX(), upcoming.getCenterY())) < 50.0) {
+            TrafficLightState light = getCurrentLightState(v);
+            if (light == TrafficLightState.RED || light == TrafficLightState.YELLOW) {
+                return;
+            }
+        }
 
-        int currentIdx = currentLane.getIndex();
-        int laneCount = seg.getLanes().size();
-        if (laneCount < 2) return;
-
-        // Đếm số lượng xe trên mỗi làn (chỉ tính cùng chiều)
-        int[] laneCounts = new int[laneCount];
+        boolean hasSlowCarAhead = false;
         for (Vehicle other : vehicles) {
             if (other == v) continue;
-            if (other.getTravelMode() != TravelMode.ON_SEGMENT) continue;
-            if (other.getCurrentSegment() != seg) continue;
-            if (other.getCurrentLane() == null) continue;
-            if (other.getCurrentLane().getDirection() != currentLane.getDirection()) continue;
-            laneCounts[other.getCurrentLane().getIndex()]++;
+            if (other.getCurrentSegment() == seg && other.getCurrentLane() == v.getCurrentLane()) {
+                double dist = v.getPosition().distanceTo(other.getPosition());
+                boolean isBehind = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD)
+                    ? v.getSegmentProgress() < other.getSegmentProgress()
+                    : v.getSegmentProgress() > other.getSegmentProgress();
+                if (isBehind && dist < 40.0 && other.getSpeed() < v.getSpeed() - 2.0) {
+                    hasSlowCarAhead = true;
+                    break;
+                }
+            }
         }
 
-        // Tìm làn bên ít xe hơn (chênh lệch ≥ 2)
-        int targetIdx = -1;
-        int minCount = laneCounts[currentIdx];
-        if (currentIdx > 0 && laneCounts[currentIdx - 1] < minCount - 1) {
-            targetIdx = currentIdx - 1;
-            minCount = laneCounts[currentIdx - 1];
-        }
-        if (currentIdx + 1 < laneCount && laneCounts[currentIdx + 1] < minCount - 1) {
-            targetIdx = currentIdx + 1;
-        }
-        if (targetIdx == -1) return;
+        if (!hasSlowCarAhead) return;
 
-        // Kiểm tra làn mục tiêu cùng hướng và đủ an toàn
-        Lane targetLane = seg.getLanes().get(targetIdx);
-        if (targetLane.getDirection() != currentLane.getDirection()) return;
-        if (!isLaneSafeToEnter(v, seg, targetIdx, 50.0)) return;
+        int currentIdx = v.getCurrentLane().getIndex();
+        int newIdx = -1;
+        if (currentIdx - 1 >= 0 && seg.getLanes().get(currentIdx - 1).getDirection() == v.getCurrentLane().getDirection()) {
+            newIdx = currentIdx - 1;
+        } else if (currentIdx + 1 < seg.getLanes().size() && seg.getLanes().get(currentIdx + 1).getDirection() == v.getCurrentLane().getDirection()) {
+            newIdx = currentIdx + 1;
+        }
 
-        // Thực hiện chuyển làn
-        v.changeLaneIndex(targetIdx);
+        if (newIdx != -1 && isLaneSafeToEnter(v, seg, newIdx, 15.0)) {
+            v.changeLaneIndex(newIdx);
+        }
     }
         /**
      * Kiểm tra xem vị trí dự kiến của xe có va chạm với bất kỳ xe nào khác không.

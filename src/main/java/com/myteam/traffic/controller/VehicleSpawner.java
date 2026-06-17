@@ -10,8 +10,8 @@ import java.util.*;
 
 public class VehicleSpawner {
 
-    // Khoảng cách an toàn để không đẻ xe đè lên nhau
-    private static final double MIN_SPAWN_CLEARANCE = 150.0;
+    // Khoảng cách an toàn để không đẻ xe đè lên nhau (chỉ cần 15m là đủ an toàn, 150m là quá lớn gây lỗi)
+    private static final double MIN_SPAWN_CLEARANCE = 15.0;
     public static final double FADE_DURATION = 1.5;
 
     private final TrafficController controller;
@@ -95,10 +95,8 @@ public class VehicleSpawner {
     }
 
     public boolean spawnManual(VehicleType type, boolean aggressive) {
+        // 1. Thử rìa bản đồ trước
         List<SpawnCandidate> candidates = getEdgeLanes();
-        if (candidates.isEmpty()) candidates = getFallbackLanes();
-        if (candidates.isEmpty()) return false;
-
         Collections.shuffle(candidates, random);
 
         for (SpawnCandidate cand : candidates) {
@@ -116,6 +114,41 @@ public class VehicleSpawner {
                 return true;
             }
         }
+
+        // 2. Nếu rìa bản đồ bị tắc, thử vị trí ngẫu nhiên trên đường
+        List<RoadSegment> segments = new ArrayList<>(network.getSegments());
+        Collections.shuffle(segments, random);
+        for (RoadSegment seg : segments) {
+            if (seg.isConnector() || seg.getLength() < 40.0) continue;
+            for (Lane lane : seg.getLanes()) {
+                for (int i = 0; i < 3; i++) {
+                    double randomT = 0.1 + random.nextDouble() * 0.8;
+                    boolean clear = true;
+                    try {
+                        double[] spawnPos = seg.getPositionOnLane(lane.getIndex(), randomT);
+                        for (Vehicle other : controller.getVehicles()) {
+                            if (Math.hypot(other.getX() - spawnPos[0], other.getY() - spawnPos[1]) < MIN_SPAWN_CLEARANCE) {
+                                clear = false; break;
+                            }
+                        }
+                    } catch (Exception e) { clear = false; }
+
+                    if (clear) {
+                        DriverBehavior behavior = (type == VehicleType.AMBULANCE || type == VehicleType.FIRETRUCK) 
+                                ? new EmergencyDriver() : (aggressive ? new AggressiveDriver() : new NormalDriver());
+                        try {
+                            Vehicle v = controller.createVehicleByType(type, behavior);
+                            v.placeOnSegment(seg, lane, randomT);
+                            v.setSpeed(20.0);
+                            controller.addVehicle(v);
+                            spawnAlphaMap.put(v, 0.0);
+                            return true;
+                        } catch (Exception e) {}
+                    }
+                }
+            }
+        }
+
         return false;
     }
 

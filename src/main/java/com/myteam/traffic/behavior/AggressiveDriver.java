@@ -42,6 +42,10 @@ public class AggressiveDriver implements DriverBehavior {
             return Action.ACCELERATE; // luôn cố gắng thoát
         }
 
+        if (context.hasEmergencyApproachingFromBehind()) {
+            return Action.YIELD;
+        }
+
         Vehicle front = context.getNearestFrontVehicle();
 
         // Ưu tiên đạt max speed (nếu an toàn)
@@ -88,6 +92,9 @@ public class AggressiveDriver implements DriverBehavior {
                 return Action.HONK;
             case ACCELERATE:
                 return Action.MOVE_FORWARD;
+            case CHANGE_LANE:
+            case YIELD:
+                return Action.SLOW_DOWN;
             default:
                 return Action.SLOW_DOWN;
         }

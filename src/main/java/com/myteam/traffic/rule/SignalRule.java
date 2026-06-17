@@ -98,7 +98,7 @@ public class SignalRule implements TrafficRule {
      */
     private boolean isAllowedOnRed(Action a) {
         return switch (a) {
-            case STOP, SLOW_DOWN, HONK -> true;
+            case STOP, SLOW_DOWN, HONK, YIELD -> true;
             default -> false;
         };
     }
@@ -123,7 +123,7 @@ public class SignalRule implements TrafficRule {
     private boolean isAllowedOnYellow(Action a, Vehicle v, RoadContext ctx) {
         return switch (a) {
             // Luôn an toàn khi đèn vàng
-            case STOP, SLOW_DOWN, HONK -> true;
+            case STOP, SLOW_DOWN, HONK, YIELD -> true;
 
             // Không bao giờ được phép khi đèn vàng
             case ACCELERATE, OVERTAKE  -> false;
