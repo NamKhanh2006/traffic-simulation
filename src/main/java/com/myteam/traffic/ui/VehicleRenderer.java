@@ -1,91 +1,106 @@
 package com.myteam.traffic.ui;
 
-import com.myteam.traffic.vehicle.Vehicle; 
+import com.myteam.traffic.vehicle.Vehicle;
 import javafx.scene.canvas.GraphicsContext;
-import javafx.scene.image.Image;
 import javafx.scene.paint.Color;
 
 public class VehicleRenderer {
-    
-    // Khai báo biến lưu trữ hình ảnh
-    private Image carImage;
-    private Image ambuImage;
-    private Image fireTruckImage;
-    private Image motorbikeImage;
-    private Image bicycleImage;
 
-    public VehicleRenderer() {
-        // Tải ảnh vào bộ nhớ khi khởi tạo Renderer
-        try {
-            carImage = new Image(getClass().getResourceAsStream("/images/car.png"));
-            ambuImage = new Image(getClass().getResourceAsStream("/images/ambulance.png"));
-            fireTruckImage = new Image(getClass().getResourceAsStream("/images/firetruck.png"));
-            motorbikeImage = new Image(getClass().getResourceAsStream("/images/motorbike.png"));
-            bicycleImage = new Image(getClass().getResourceAsStream("/images/bicycle.png"));
-        } catch (Exception e) {
-            System.out.println("Lỗi tải ảnh: " + e.getMessage());
-        }
+    // Kích thước (L = Chiều dài trục X, W = Chiều rộng trục Y)
+    private static final double CAR_L   = 20.0;
+    private static final double CAR_W   = 10.0;
+    private static final double MOTO_L  = 12.0;
+    private static final double MOTO_W  = 5.0;
+    private static final double BIKE_L  = 10.0;
+    private static final double BIKE_W  = 4.0;
+    private static final double TRUCK_L = 28.0;
+    private static final double TRUCK_W = 12.0;
+
+    private com.myteam.traffic.controller.VehicleSpawner spawner;
+
+    public VehicleRenderer() {}
+
+    public void setSpawner(com.myteam.traffic.controller.VehicleSpawner spawner) {
+        this.spawner = spawner;
     }
 
-    // Hàm này sẽ được gọi liên tục mỗi khung hình (Frame)
     public void render(GraphicsContext gc, Vehicle vehicle, boolean isGraphicMode) {
-        // Lấy tọa độ từ logic
         double x = vehicle.getX();
         double y = vehicle.getY();
-        double angle = vehicle.getDirection().toDegrees(); // Lấy hướng (góc) của xe
-        
-        // Kích thước vẽ mặc định. Có thể thay bằng vehicle.getWidth() * tỉ lệ (scale)
-        double width = 40; 
-        double height = 20;
+        double angleDeg = vehicle.getDirection().toDegrees();
 
-        // Lưu trạng thái của GraphicsContext trước khi bắt đầu biến đổi
+        double[] dims = getDimensions(vehicle);
+        double l = dims[0]; // Chiều dài
+        double w = dims[1]; // Chiều rộng
+
+        double alpha = (spawner != null) ? spawner.getSpawnAlpha(vehicle) : 1.0;
+
         gc.save();
-        
-        // Dịch chuyển trục tọa độ đến tâm của phương tiện
-        gc.translate(x + width / 2, y + height / 2);
-        
-        // Xoay theo góc của phương tiện (Vehicle sử dụng radian nên cần đổi sang độ)
-        gc.rotate(Math.toDegrees(angle));
-        
-        if (!isGraphicMode) {
-            // 1. Chế độ BASIC: Chỉ vẽ hình chữ nhật đơn giản
-            gc.setFill(Color.BLUE);
-            gc.fillRect(-width / 2, -height / 2, width, height); // Vẽ với tâm là 0, 0 mới
-            gc.setFill(Color.WHITE);
-            gc.fillText(vehicle.getType().toString(), -width / 2 + 5, -height / 2 + 15); // Ghi loại xe lên khối
-        } else {
-            // 2. Chế độ ĐỒ HỌA: Vẽ hình ảnh Image
-            Image imageToDraw = carImage; // Mặc định là ô tô
-            
-            String type = vehicle.getType() != null ? vehicle.getType().toString() : "";
-            switch (type) {
-                case "Ambulance":
-                    imageToDraw = ambuImage;
-                    break;
-                case "FireTruck":
-                    imageToDraw = fireTruckImage;
-                    break;
-                case "Motorbike":
-                    imageToDraw = motorbikeImage;
-                    break;
-                case "Bicycle":
-                    imageToDraw = bicycleImage;
-                    break;
-                default:
-                    if (vehicle.isEmergency()) { // Backup cho các loại xe cứu hộ khác
-                        imageToDraw = ambuImage;
-                    }
-                    break;
-            }
-            
-            // Fallback an toàn nếu có ảnh bị lỗi khi load
-            if (imageToDraw == null) imageToDraw = carImage;
+        gc.setGlobalAlpha(alpha);
 
-            // Lệnh vẽ ảnh: (hình_ảnh, tọa_độ_x, tọa_độ_y, chiều_rộng, chiều_cao)
-            gc.drawImage(imageToDraw, -width / 2, -height / 2, width, height);
+        // Dịch chuyển về tâm xe và xoay theo hướng di chuyển
+        gc.translate(x, y);
+        gc.rotate(angleDeg);
+
+        // 1. Vẽ thân xe dạng hình chữ nhật bo góc
+        Color baseColor = getBaseColor(vehicle);
+        gc.setFill(baseColor);
+        gc.fillRoundRect(-l / 2, -w / 2, l, w, 4, 4);
+
+        // Vẽ viền xe
+        gc.setStroke(baseColor.darker());
+        gc.setLineWidth(1.0);
+        gc.strokeRoundRect(-l / 2, -w / 2, l, w, 4, 4);
+
+        // 2. Vẽ kính chắn gió phía ĐẦU xe (trục X dương)
+        gc.setFill(Color.web("#8cd4ff", 0.8)); // Kính màu xanh lơ
+        gc.fillRect(l / 4 - 1, -w / 2 + 1.5, l * 0.15, w - 3);
+
+        // 3. Kính hậu phía ĐUÔI xe
+        gc.setFill(Color.web("#2c3e50", 0.8)); // Kính tối màu
+        gc.fillRect(-l / 2 + 2, -w / 2 + 2, l * 0.1, w - 4);
+
+        // 4. ĐÈN PHA (Đầu xe - màu vàng sáng)
+        gc.setFill(Color.web("#f1c40f", 0.9));
+        gc.fillOval(l / 2 - 2, -w / 2 + 1, 2, 2.5); // Pha trái
+        gc.fillOval(l / 2 - 2, w / 2 - 3.5, 2, 2.5); // Pha phải
+
+        // 5. ĐÈN HẬU (Đuôi xe - màu đỏ rực)
+        gc.setFill(Color.web("#ff0000", 0.9));
+        gc.fillOval(-l / 2, -w / 2 + 1, 2, 2.5); // Hậu trái
+        gc.fillOval(-l / 2, w / 2 - 3.5, 2, 2.5); // Hậu phải
+
+        // Nếu là xe ưu tiên (cứu hỏa/cứu thương), vẽ đèn còi trên nóc
+        if (vehicle.isEmergency()) {
+            gc.setFill(Color.BLUE);
+            gc.fillRect(-2, -w / 2 + 1, 4, 3);
+            gc.setFill(Color.RED);
+            gc.fillRect(-2, w / 2 - 4, 4, 3);
         }
-        
-        // Phục hồi lại trạng thái GraphicsContext như ban đầu (để tránh ảnh hưởng tới xe vẽ sau)
+
         gc.restore();
+    }
+
+    private double[] getDimensions(Vehicle v) {
+        if (v.getType() == null) return new double[]{CAR_L, CAR_W};
+        return switch (v.getType()) {
+            case MOTORBIKE         -> new double[]{MOTO_L,  MOTO_W};
+            case BICYCLE           -> new double[]{BIKE_L,  BIKE_W};
+            case AMBULANCE,
+                 FIRETRUCK         -> new double[]{TRUCK_L, TRUCK_W};
+            default                -> new double[]{CAR_L,   CAR_W};
+        };
+    }
+
+    private Color getBaseColor(Vehicle v) {
+        if (v.getType() == null) return Color.web("#e74c3c");
+        return switch (v.getType()) {
+            case CAR        -> Color.web("#e74c3c"); // Đỏ
+            case MOTORBIKE  -> Color.web("#f39c12"); // Vàng cam
+            case BICYCLE    -> Color.web("#2ecc71"); // Xanh lá
+            case AMBULANCE  -> Color.web("#ecf0f1"); // Trắng
+            case FIRETRUCK  -> Color.web("#c0392b"); // Đỏ sẫm
+            default         -> Color.web("#3498db");
+        };
     }
 }

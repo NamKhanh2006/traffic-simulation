@@ -28,6 +28,7 @@ import java.util.Optional;
  */
 public class NoCountdownLight extends TrafficLight {
 
+
     public NoCountdownLight(int redTime, int greenTime, int yellowTime) {
         super(redTime, greenTime, yellowTime);
     }

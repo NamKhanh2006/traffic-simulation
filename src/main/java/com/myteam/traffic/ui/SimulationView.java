@@ -14,6 +14,9 @@ import javafx.scene.paint.Color;
 import javafx.scene.shape.StrokeLineCap;
 import javafx.stage.Popup;
 
+import com.myteam.traffic.controller.VehicleSpawner;
+import com.myteam.traffic.vehicle.Vehicle;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Stack;
@@ -23,15 +26,15 @@ public class SimulationView extends Canvas {
     public enum InteractionType { PAN, DRAW_ROAD, EDIT_MARKINGS, PLACE_INTERSECTION, DELETE }
 
     /**
-     * Loại giao lộ sẽ được đặt khi người dùng click trong mode PLACE_INTERSECTION.
-     * "3T","3Y"=Ngã ba T/Y; "4"=Ngã tư; "5"=Ngã năm; "ROUNDABOUT_S/L"=Vòng xuyến.
+     * Loáº¡i giao lá»™ sáº½ Ä‘Æ°á»£c Ä‘áº·t khi ngÆ°á»i dÃ¹ng click trong mode PLACE_INTERSECTION.
+     * "3T","3Y"=NgÃ£ ba T/Y; "4"=NgÃ£ tÆ°; "5"=NgÃ£ nÄƒm; "ROUNDABOUT_S/L"=VÃ²ng xuyáº¿n.
      */
     private String intersectionTypeToPlace = "4";
     private double roundaboutRadius        = 60.0;
     private int    roundaboutBranches      = 4;
     private java.util.function.IntFunction<java.util.List<Lane>> laneFactory = null;
 
-    // ── Cấu hình làn nâng cao ─────────────────────────────────
+    // â”€â”€ Cáº¥u hÃ¬nh lÃ n nÃ¢ng cao â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     private double  laneWidth       = 3.5;
     private boolean highwayMode     = false;
     private double  highwayMinSpeed = 60.0;
@@ -57,7 +60,47 @@ public class SimulationView extends Canvas {
     private boolean isDrawing = false;
     private double  drawStartX, drawStartY, drawCurrentX, drawCurrentY;
 
-    // ── Redraw throttle: gộp nhiều yêu cầu vẽ lại trong 1 frame ─
+    private com.myteam.traffic.controller.TrafficController controller;
+    private final VehicleRenderer vehicleRenderer = new VehicleRenderer();
+
+    // ── Mô phỏng (spawn + tick) ────────────────────────────────
+    private VehicleSpawner spawner;
+    private boolean simulationRunning = false;
+
+    private final javafx.animation.AnimationTimer simLoop = new javafx.animation.AnimationTimer() {
+        private long lastNanos = -1;
+        @Override public void handle(long now) {
+            if (lastNanos < 0) { lastNanos = now; return; }
+            double dt = Math.min((now - lastNanos) / 1_000_000_000.0, 0.1);
+            lastNanos = now;
+            if (spawner != null) spawner.tick(dt);
+            if (controller != null) controller.tick(dt);
+            redraw();
+        }
+        @Override public void start() { lastNanos = -1; super.start(); }
+    };
+
+    public void setSpawner(VehicleSpawner spawner) {
+        this.spawner = spawner;
+        vehicleRenderer.setSpawner(spawner);  // ← thêm dòng này để fade-in hoạt động
+    }
+    public VehicleSpawner getSpawner() { return spawner; }
+    public com.myteam.traffic.controller.TrafficController getController() { return controller; }
+
+    /** Bật/tắt vòng lặp mô phỏng (tick controller + spawner mỗi frame). */
+    public void setSimulationRunning(boolean run) {
+        this.simulationRunning = run;
+        if (run) simLoop.start(); else simLoop.stop();
+    }
+    public boolean isSimulationRunning() { return simulationRunning; }
+
+    /** Chạy 1 tick thủ công (vd. ngay sau khi thêm xe lúc đang pause) để cập nhật hiển thị. */
+    public void stepOnce() {
+        if (controller != null) controller.tick(0.0);
+        redraw();
+    }
+
+    // â”€â”€ Redraw throttle: gá»™p nhiá»u yÃªu cáº§u váº½ láº¡i trong 1 frame â”€
     private boolean redrawPending = false;
     private final javafx.animation.AnimationTimer redrawTimer = new javafx.animation.AnimationTimer() {
         @Override public void handle(long now) {
@@ -67,18 +110,18 @@ public class SimulationView extends Canvas {
 
     private static final double SNAP_GRID = 100.0;
 
-    // ── Hover state (EDIT_MARKINGS mode) ──────────────────────
+    // â”€â”€ Hover state (EDIT_MARKINGS mode) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     private HoverResult hoveredBoundary = null;
 
-    // ── Hover state (DELETE mode) ──────────────────────────────
+    // â”€â”€ Hover state (DELETE mode) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     private RoadSegment  hoveredSegment      = null;
     private Intersection hoveredIntersection = null;
 
-    /** Gói dữ liệu mô tả ranh giới đang được hover. */
+    /** GÃ³i dá»¯ liá»‡u mÃ´ táº£ ranh giá»›i Ä‘ang Ä‘Æ°á»£c hover. */
     private static class HoverResult {
         final RoadSegment seg;
-        final int         boundaryIndex; // ranh giới nội bộ (1 .. laneCount-1)
-        final double      screenX, screenY; // tọa độ màn hình của điểm giữa vạch
+        final int         boundaryIndex; // ranh giá»›i ná»™i bá»™ (1 .. laneCount-1)
+        final double      screenX, screenY; // tá»a Ä‘á»™ mÃ n hÃ¬nh cá»§a Ä‘iá»ƒm giá»¯a váº¡ch
 
         HoverResult(RoadSegment seg, int boundaryIndex, double screenX, double screenY) {
             this.seg = seg;
@@ -89,18 +132,18 @@ public class SimulationView extends Canvas {
     }
 
     /**
-     * Callback để App đồng bộ toolbar khi view thay đổi trạng thái EDIT_MARKINGS.
-     * Tham số: InteractionType trước đó nếu vừa vào EDIT_MARKINGS, null nếu vừa thoát.
+     * Callback Ä‘á»ƒ App Ä‘á»“ng bá»™ toolbar khi view thay Ä‘á»•i tráº¡ng thÃ¡i EDIT_MARKINGS.
+     * Tham sá»‘: InteractionType trÆ°á»›c Ä‘Ã³ náº¿u vá»«a vÃ o EDIT_MARKINGS, null náº¿u vá»«a thoÃ¡t.
      */
     private java.util.function.Consumer<InteractionType> onMarkingModeEntered = null;
     public void setOnMarkingModeEntered(java.util.function.Consumer<InteractionType> cb) { this.onMarkingModeEntered = cb; }
 
-    /** Mode trước khi vào EDIT_MARKINGS — để restore khi thoát. */
+    /** Mode trÆ°á»›c khi vÃ o EDIT_MARKINGS â€” Ä‘á»ƒ restore khi thoÃ¡t. */
     private InteractionType previousMode = InteractionType.PAN;
 
     /**
-     * Flag bỏ qua 1 MOUSE_PRESSED tiếp theo — dùng khi popup đóng và event
-     * "click để đóng popup" bị forward xuống canvas gây pan/select không mong muốn.
+     * Flag bá» qua 1 MOUSE_PRESSED tiáº¿p theo â€” dÃ¹ng khi popup Ä‘Ã³ng vÃ  event
+     * "click Ä‘á»ƒ Ä‘Ã³ng popup" bá»‹ forward xuá»‘ng canvas gÃ¢y pan/select khÃ´ng mong muá»‘n.
      */
     private boolean ignoreNextPress = false;
     private final Stack<NetworkSnapshot> undoStack = new Stack<>();
@@ -122,14 +165,14 @@ public class SimulationView extends Canvas {
     public void saveSnapshot() { if (network != null) undoStack.push(new NetworkSnapshot(network)); }
     public void undo()         { if (!undoStack.isEmpty() && network != null) { undoStack.pop().restore(network); updateRenderData(); } }
 
-    // ── Constructor ───────────────────────────────────────────
+    // â”€â”€ Constructor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public SimulationView(double width, double height) {
         super(width, height);
         this.renderer   = new InfrastructureRenderer(this);
         this.translateX = width  / 2;
         this.translateY = height / 2;
         setupEvents();
-        // Ẩn popup khi cửa sổ mất focus
+        // áº¨n popup khi cá»­a sá»• máº¥t focus
         sceneProperty().addListener((obs, oldScene, newScene) -> {
             if (newScene != null) {
                 newScene.windowProperty().addListener((obs2, ow, nw) -> {
@@ -141,7 +184,7 @@ public class SimulationView extends Canvas {
         });
     }
 
-    // ── Setters ───────────────────────────────────────────────
+    // â”€â”€ Setters â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public void setNetwork(RoadNetwork network)       { this.network = network; updateRenderData(); }
     public void setCurrentLaneConfig(int lanes)       { this.currentLaneConfig = lanes; }
     public void setAutoIntersect(boolean auto)        { this.autoIntersect = auto; }
@@ -150,12 +193,12 @@ public class SimulationView extends Canvas {
     public void setIntersectionTypeToPlace(String t)  { this.intersectionTypeToPlace = t; }
     public void setLaneFactory(java.util.function.IntFunction<java.util.List<Lane>> f) { this.laneFactory = f; }
 
-    // ── Cấu hình làn đường nâng cao ──────────────────────────
-    /** Chiều rộng mỗi làn (mét, mặc định 3.5). Áp dụng cho đường vẽ tiếp theo. */
+    // â”€â”€ Cáº¥u hÃ¬nh lÃ n Ä‘Æ°á»ng nÃ¢ng cao â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    /** Chiá»u rá»™ng má»—i lÃ n (mÃ©t, máº·c Ä‘á»‹nh 3.5). Ãp dá»¥ng cho Ä‘Æ°á»ng váº½ tiáº¿p theo. */
     public void setLaneWidth(double w)                { this.laneWidth = Math.max(2.0, Math.min(6.0, w)); }
-    /** Bán kính vòng xuyến (world units). */
+    /** BÃ¡n kÃ­nh vÃ²ng xuyáº¿n (world units). */
     public void setRoundaboutRadius(double r)         { this.roundaboutRadius = Math.max(40, r); }
-    // ── Selected segment (click trong PAN mode để chọn đường sửa) ──
+    // â”€â”€ Selected segment (click trong PAN mode Ä‘á»ƒ chá»n Ä‘Æ°á»ng sá»­a) â”€â”€
     private RoadSegment selectedSegment = null;
     private java.util.function.Consumer<RoadSegment> onSegmentSelected = null;
     public void setOnSegmentSelected(java.util.function.Consumer<RoadSegment> cb) { this.onSegmentSelected = cb; }
@@ -172,15 +215,15 @@ public class SimulationView extends Canvas {
         updateRenderData();
         redraw();
     }
-    /** Số nhánh vòng xuyến. */
+    /** Sá»‘ nhÃ¡nh vÃ²ng xuyáº¿n. */
     public void setRoundaboutBranches(int b)          { this.roundaboutBranches = Math.max(3, Math.min(8, b)); }
-    /** Đường cao tốc: true = dùng HighwaySegment. */
+    /** ÄÆ°á»ng cao tá»‘c: true = dÃ¹ng HighwaySegment. */
     public void setHighwayMode(boolean hw)            { this.highwayMode = hw; }
-    /** Tốc độ tối thiểu cao tốc (km/h). */
+    /** Tá»‘c Ä‘á»™ tá»‘i thiá»ƒu cao tá»‘c (km/h). */
     public void setHighwayMinSpeed(double s)          { this.highwayMinSpeed = s; }
-    /** Có làn khẩn cấp không. */
+    /** CÃ³ lÃ n kháº©n cáº¥p khÃ´ng. */
     public void setEmergencyLane(boolean el)          { this.emergencyLane = el; }
-    /** Cho phép xe buýt/xe tải. */
+    /** Cho phÃ©p xe buÃ½t/xe táº£i. */
     public void setAllowHeavy(boolean allow)          { this.allowHeavy = allow; }
 
     public void setInteractionType(InteractionType m) {
@@ -189,7 +232,7 @@ public class SimulationView extends Canvas {
         this.hoveredBoundary    = null;
         this.hoveredSegment     = null;
         this.hoveredIntersection = null;
-        // Đặt vị trí preview về tâm canvas nếu chuột chưa vào canvas
+        // Äáº·t vá»‹ trÃ­ preview vá» tÃ¢m canvas náº¿u chuá»™t chÆ°a vÃ o canvas
         if (lastMouseX <= 0) lastMouseX = getWidth() / 2;
         if (lastMouseY <= 0) lastMouseY = getHeight() / 2;
         redraw();
@@ -200,7 +243,7 @@ public class SimulationView extends Canvas {
     public void zoomIn()     { scale *= 1.2; redraw(); }
     public void zoomOut()    { scale /= 1.2; redraw(); }
 
-    /** Yêu cầu vẽ lại — được gộp lại trong 1 frame, tránh vẽ nhiều lần/frame khi zoom/pan nhanh. */
+    /** YÃªu cáº§u váº½ láº¡i â€” Ä‘Æ°á»£c gá»™p láº¡i trong 1 frame, trÃ¡nh váº½ nhiá»u láº§n/frame khi zoom/pan nhanh. */
     public void redraw() { redrawPending = true; redrawTimer.start(); }
 
     public double getViewScale() { return scale; }
@@ -208,7 +251,7 @@ public class SimulationView extends Canvas {
     public double getViewX()     { return translateX; }
     public double getViewY()     { return translateY; }
 
-    // ── Coordinate transforms ─────────────────────────────────
+    // â”€â”€ Coordinate transforms â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public double toScreenX(double worldX) { return worldX * scale + translateX; }
     public double toScreenY(double worldY) { return worldY * scale + translateY; }
     public double toWorldX(double screenX) { return (screenX - translateX) / scale; }
@@ -223,7 +266,7 @@ public class SimulationView extends Canvas {
         double bestDist = Double.MAX_VALUE;
         for (IntersectionRenderData inter : data.intersections) {
             double d = Math.hypot(worldX - inter.centerX, worldY - inter.centerY);
-            // Chấp nhận nếu điểm endpoint nằm trong hoặc sát bán kính nút giao
+            // Cháº¥p nháº­n náº¿u Ä‘iá»ƒm endpoint náº±m trong hoáº·c sÃ¡t bÃ¡n kÃ­nh nÃºt giao
             if (d <= inter.radius + 5.0 && d < bestDist) {
                 bestDist = d;
                 bestR = inter.radius;
@@ -234,7 +277,7 @@ public class SimulationView extends Canvas {
 
 
 
-    /** Hit-test: tìm RoadSegment gần con trỏ nhất (dùng cho DELETE mode). */
+    /** Hit-test: tÃ¬m RoadSegment gáº§n con trá» nháº¥t (dÃ¹ng cho DELETE mode). */
     private RoadSegment hitTestSegment(double worldX, double worldY) {
         if (network == null) return null;
         RoadSegment result = null;
@@ -246,11 +289,11 @@ public class SimulationView extends Canvas {
             double len2 = dx*dx + dy*dy;
             if (len2 < 1e-6) continue;
             double t = ((worldX-sx)*dx + (worldY-sy)*dy) / len2;
-            // Lùi vào trong 8% ở 2 đầu để tránh đè vùng giao lộ
+            // LÃ¹i vÃ o trong 8% á»Ÿ 2 Ä‘áº§u Ä‘á»ƒ trÃ¡nh Ä‘Ã¨ vÃ¹ng giao lá»™
             t = Math.max(0.08, Math.min(0.92, t));
             double projX = sx + t*dx, projY = sy + t*dy;
             double d = Math.hypot(worldX - projX, worldY - projY);
-            // Vùng nhận diện = 60% chiều rộng thực (rộng hơn cũ ×1.4 nhưng không quá toàn bộ)
+            // VÃ¹ng nháº­n diá»‡n = 60% chiá»u rá»™ng thá»±c (rá»™ng hÆ¡n cÅ© Ã—1.4 nhÆ°ng khÃ´ng quÃ¡ toÃ n bá»™)
             double halfWidth = seg.getLaneCount() * 20.0 / 2.0 * 1.4;
             if (d <= halfWidth && d < bestDist) { bestDist = d; result = seg; }
         }
@@ -258,9 +301,9 @@ public class SimulationView extends Canvas {
     }
 
     /**
-     * Phiên bản hit-test rộng hơn dùng cho hover + chuột phải pin popup.
-     * Vùng nhận diện = toàn bộ chiều rộng đường + padding 12 world units mỗi bên,
-     * và không bị giới hạn 8% ở 2 đầu (để hover đầu đường vẫn hiện popup).
+     * PhiÃªn báº£n hit-test rá»™ng hÆ¡n dÃ¹ng cho hover + chuá»™t pháº£i pin popup.
+     * VÃ¹ng nháº­n diá»‡n = toÃ n bá»™ chiá»u rá»™ng Ä‘Æ°á»ng + padding 12 world units má»—i bÃªn,
+     * vÃ  khÃ´ng bá»‹ giá»›i háº¡n 8% á»Ÿ 2 Ä‘áº§u (Ä‘á»ƒ hover Ä‘áº§u Ä‘Æ°á»ng váº«n hiá»‡n popup).
      */
     private RoadSegment hitTestSegmentForPopup(double worldX, double worldY) {
         if (network == null) return null;
@@ -274,10 +317,10 @@ public class SimulationView extends Canvas {
             double len2 = dx*dx + dy*dy;
             if (len2 < 1e-6) continue;
             double t = ((worldX-sx)*dx + (worldY-sy)*dy) / len2;
-            t = Math.max(0.0, Math.min(1.0, t)); // toàn bộ chiều dài đường
+            t = Math.max(0.0, Math.min(1.0, t)); // toÃ n bá»™ chiá»u dÃ i Ä‘Æ°á»ng
             double projX = sx + t*dx, projY = sy + t*dy;
             double d = Math.hypot(worldX - projX, worldY - projY);
-            // Toàn bộ nửa chiều rộng thực + 12 world units padding
+            // ToÃ n bá»™ ná»­a chiá»u rá»™ng thá»±c + 12 world units padding
             double halfWidth = seg.getLaneCount() * laneWidth / 2.0 + 12.0;
             if (d <= halfWidth && d < bestDist) { bestDist = d; result = seg; }
         }
@@ -285,9 +328,9 @@ public class SimulationView extends Canvas {
     }
 
     /**
-     * Snap điểm world vào điểm gần nhất nằm TRÊN THÂN đoạn đường (không chỉ endpoint).
-     * Trả về [snapX, snapY] nếu tìm thấy, null nếu không.
-     * excludeX/excludeY: điểm xuất phát — bỏ qua nếu snap trùng với nó.
+     * Snap Ä‘iá»ƒm world vÃ o Ä‘iá»ƒm gáº§n nháº¥t náº±m TRÃŠN THÃ‚N Ä‘oáº¡n Ä‘Æ°á»ng (khÃ´ng chá»‰ endpoint).
+     * Tráº£ vá» [snapX, snapY] náº¿u tÃ¬m tháº¥y, null náº¿u khÃ´ng.
+     * excludeX/excludeY: Ä‘iá»ƒm xuáº¥t phÃ¡t â€” bá» qua náº¿u snap trÃ¹ng vá»›i nÃ³.
      */
     private double[] snapToSegmentPoint(double worldX, double worldY, double radius,
                                         double excludeX, double excludeY) {
@@ -311,9 +354,9 @@ public class SimulationView extends Canvas {
     }
 
     /**
-     * Tìm endpoint (điểm đầu/cuối) của đường hiện có gần nhất trong phạm vi radius.
-     * Trả về [x, y] nếu tìm thấy, null nếu không.
-     * excludeX/excludeY: điểm đang vẽ từ đó — không snap vào chính nó.
+     * TÃ¬m endpoint (Ä‘iá»ƒm Ä‘áº§u/cuá»‘i) cá»§a Ä‘Æ°á»ng hiá»‡n cÃ³ gáº§n nháº¥t trong pháº¡m vi radius.
+     * Tráº£ vá» [x, y] náº¿u tÃ¬m tháº¥y, null náº¿u khÃ´ng.
+     * excludeX/excludeY: Ä‘iá»ƒm Ä‘ang váº½ tá»« Ä‘Ã³ â€” khÃ´ng snap vÃ o chÃ­nh nÃ³.
      */
     private double[] snapToEndpoint(double worldX, double worldY, double radius,
                                     double excludeX, double excludeY) {
@@ -323,7 +366,7 @@ public class SimulationView extends Canvas {
         for (RoadSegment road : network.getSegments()) {
             double sx = road.getStartX(), sy = road.getStartY();
             double ex = road.getEndX(),   ey = road.getEndY();
-            // Bỏ qua điểm trùng với điểm xuất phát (tránh snap vào chính điểm đang vẽ từ đó)
+            // Bá» qua Ä‘iá»ƒm trÃ¹ng vá»›i Ä‘iá»ƒm xuáº¥t phÃ¡t (trÃ¡nh snap vÃ o chÃ­nh Ä‘iá»ƒm Ä‘ang váº½ tá»« Ä‘Ã³)
             if (!isSamePoint(sx, sy, excludeX, excludeY)) {
                 double dS = Math.hypot(sx - worldX, sy - worldY);
                 if (dS < best) { best = dS; result = new double[]{sx, sy}; }
@@ -336,22 +379,22 @@ public class SimulationView extends Canvas {
         return result;
     }
 
-    // ── Connection count (for stop lines) ────────────────────
-    // Chỉ trả về số > 1 khi tại điểm đó có Intersection thật sự được đăng ký.
-    // Tránh vẽ stop line khi 2 đường chỉ nối đuôi nhau thẳng hàng.
+    // â”€â”€ Connection count (for stop lines) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Chá»‰ tráº£ vá» sá»‘ > 1 khi táº¡i Ä‘iá»ƒm Ä‘Ã³ cÃ³ Intersection tháº­t sá»± Ä‘Æ°á»£c Ä‘Äƒng kÃ½.
+    // TrÃ¡nh váº½ stop line khi 2 Ä‘Æ°á»ng chá»‰ ná»‘i Ä‘uÃ´i nhau tháº³ng hÃ ng.
     private int countConnections(double x, double y) {
         if (network == null) return 0;
-        // Kiểm tra có Intersection tại điểm này không
+        // Kiá»ƒm tra cÃ³ Intersection táº¡i Ä‘iá»ƒm nÃ y khÃ´ng
         Intersection inter = network.findNearestIntersection(x, y, 5.0);
-        if (inter == null) return 1; // Không có ngã tư → không vẽ stop line
-        // Đếm số đường kết nối vào intersection đó
+        if (inter == null) return 1; // KhÃ´ng cÃ³ ngÃ£ tÆ° â†’ khÃ´ng váº½ stop line
+        // Äáº¿m sá»‘ Ä‘Æ°á»ng káº¿t ná»‘i vÃ o intersection Ä‘Ã³
         return inter.getRoadCount();
     }
 
-    // ════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // REDRAW
-    // ════════════════════════════════════════════════════════════
-    /** Thực sự vẽ lại ngay lập tức (gọi nội bộ từ AnimationTimer). */
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+    /** Thá»±c sá»± váº½ láº¡i ngay láº­p tá»©c (gá»i ná»™i bá»™ tá»« AnimationTimer). */
     private void redrawNow() {
         GraphicsContext gc = getGraphicsContext2D();
         gc.setFill(Color.web("#1a1f2e"));
@@ -366,7 +409,7 @@ public class SimulationView extends Canvas {
                 renderer.drawJunctionFill(gc, interData);
             }
 
-            renderer.setRenderData(data); // inject để computeMarkClipOffset dùng
+            renderer.setRenderData(data); // inject Ä‘á»ƒ computeMarkClipOffset dÃ¹ng
             for (RoadSegment road : data.roads) {
                 renderer.drawRoadMarks(gc, road);
             }
@@ -379,50 +422,61 @@ public class SimulationView extends Canvas {
             if (currentMode == InteractionType.EDIT_MARKINGS && hoveredBoundary != null) {
                 renderer.drawBoundaryHighlight(gc, hoveredBoundary.seg, hoveredBoundary.boundaryIndex);
             }
-            // Highlight đường đã được chọn (click trong PAN mode)
+            // Highlight Ä‘Æ°á»ng Ä‘Ã£ Ä‘Æ°á»£c chá»n (click trong PAN mode)
             if (selectedSegment != null) renderer.drawSelectedHighlight(gc, selectedSegment);
 
-            // DELETE mode: highlight đỏ đoạn đường / nút giao đang hover
+            // DELETE mode: highlight Ä‘á» Ä‘oáº¡n Ä‘Æ°á»ng / nÃºt giao Ä‘ang hover
             if (currentMode == InteractionType.DELETE) {
                 if (hoveredSegment != null) renderer.drawSegmentHighlight(gc, hoveredSegment);
                 if (hoveredIntersection != null) renderer.drawIntersectionHighlight(gc, hoveredIntersection);
             }
         }
 
+        // -- Ve xe (controller.getVehicles()) --
+        if (controller != null) {
+            gc.save();
+            gc.translate(translateX, translateY);
+            gc.scale(scale, scale);
+            for (Vehicle v : controller.getVehicles()) {
+                vehicleRenderer.render(gc, v, true);
+            }
+            gc.restore();
+        }
+
         if (currentMode == InteractionType.DRAW_ROAD && isDrawing) {
             double sx = toScreenX(drawStartX), sy = toScreenY(drawStartY);
             double ex = toScreenX(drawCurrentX), ey = toScreenY(drawCurrentY);
 
-            // ── AXIS GUIDE: 2 đường trục theo hướng kéo vẽ ───────────────────
-            // Tính góc hướng từ điểm bắt đầu → điểm hiện tại
+            // â”€â”€ AXIS GUIDE: 2 Ä‘Æ°á»ng trá»¥c theo hÆ°á»›ng kÃ©o váº½ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // TÃ­nh gÃ³c hÆ°á»›ng tá»« Ä‘iá»ƒm báº¯t Ä‘áº§u â†’ Ä‘iá»ƒm hiá»‡n táº¡i
             double axDx = ex - sx, axDy = ey - sy;
             double axLen = Math.hypot(axDx, axDy);
-            if (axLen > 2) { // chỉ vẽ khi đã kéo đủ xa
-                double ux = axDx / axLen, uy = axDy / axLen; // unit vector theo hướng vẽ
-                double big = Math.max(getWidth(), getHeight()) * 3; // đủ dài ra ngoài màn hình
+            if (axLen > 2) { // chá»‰ váº½ khi Ä‘Ã£ kÃ©o Ä‘á»§ xa
+                double ux = axDx / axLen, uy = axDy / axLen; // unit vector theo hÆ°á»›ng váº½
+                double big = Math.max(getWidth(), getHeight()) * 3; // Ä‘á»§ dÃ i ra ngoÃ i mÃ n hÃ¬nh
 
                 gc.save();
                 gc.setStroke(Color.web("#e8d44d", 0.28));
                 gc.setLineWidth(1.2);
                 gc.setLineDashes(14, 10);
 
-                // Trục qua điểm BẮT ĐẦU — kéo cả 2 chiều
+                // Trá»¥c qua Ä‘iá»ƒm Báº®T Äáº¦U â€” kÃ©o cáº£ 2 chiá»u
                 gc.strokeLine(sx - ux * big, sy - uy * big, sx + ux * big, sy + uy * big);
 
-                // Trục qua điểm HIỆN TẠI — kéo cả 2 chiều
+                // Trá»¥c qua Ä‘iá»ƒm HIá»†N Táº I â€” kÃ©o cáº£ 2 chiá»u
                 gc.strokeLine(ex - ux * big, ey - uy * big, ex + ux * big, ey + uy * big);
 
                 gc.setLineDashes(null);
                 gc.restore();
             }
 
-            // ── PREVIEW đường đang vẽ ─────────────────────────────────────────
+            // â”€â”€ PREVIEW Ä‘Æ°á»ng Ä‘ang váº½ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             gc.setStroke(Color.web("#e8d44d", 0.75));
             gc.setLineWidth(Math.max(2, (currentLaneConfig * 4) * scale));
             gc.setLineCap(StrokeLineCap.BUTT);
             gc.strokeLine(sx, sy, ex, ey);
 
-            // Chấm nhỏ tại điểm bắt đầu và điểm hiện tại
+            // Cháº¥m nhá» táº¡i Ä‘iá»ƒm báº¯t Ä‘áº§u vÃ  Ä‘iá»ƒm hiá»‡n táº¡i
             gc.setFill(Color.web("#e8d44d", 0.9));
             gc.fillOval(sx - 3, sy - 3, 6, 6);
             gc.fillOval(ex - 3, ey - 3, 6, 6);
@@ -431,7 +485,7 @@ public class SimulationView extends Canvas {
         // Ghost preview cho mode PLACE_INTERSECTION
         if (currentMode == InteractionType.PLACE_INTERSECTION && lastMouseX > 0) {
             double wx = toWorldX(lastMouseX), wy = toWorldY(lastMouseY);
-            // Snap preview vào endpoint gần nhất nếu có
+            // Snap preview vÃ o endpoint gáº§n nháº¥t náº¿u cÃ³
             double[] ep = snapToEndpoint(wx, wy, 50.0 / scale, Double.MAX_VALUE, Double.MAX_VALUE);
             if (ep != null) { wx = ep[0]; wy = ep[1]; }
             double sx = toScreenX(wx), sy = toScreenY(wy);
@@ -446,21 +500,22 @@ public class SimulationView extends Canvas {
             gc.setFill(Color.web("#e8d44d", 0.9));
             gc.fillOval(sx - 4, sy - 4, 8, 8);
         }
+
     }
 
-    // ════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // HOVER HIT-TEST (EDIT_MARKINGS mode)
-    // ════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
     /**
-     * Dò tìm ranh giới làn gần con trỏ nhất.
-     * Trả về HoverResult nếu con trỏ đủ gần (< HOVER_THRESHOLD đơn vị thế giới),
-     * ngược lại trả về null.
+     * DÃ² tÃ¬m ranh giá»›i lÃ n gáº§n con trá» nháº¥t.
+     * Tráº£ vá» HoverResult náº¿u con trá» Ä‘á»§ gáº§n (< HOVER_THRESHOLD Ä‘Æ¡n vá»‹ tháº¿ giá»›i),
+     * ngÆ°á»£c láº¡i tráº£ vá» null.
      *
-     * Thuật toán: xoay điểm click vào hệ tọa độ cục bộ của đường,
-     * sau đó so sánh localY với vị trí từng ranh giới.
+     * Thuáº­t toÃ¡n: xoay Ä‘iá»ƒm click vÃ o há»‡ tá»a Ä‘á»™ cá»¥c bá»™ cá»§a Ä‘Æ°á»ng,
+     * sau Ä‘Ã³ so sÃ¡nh localY vá»›i vá»‹ trÃ­ tá»«ng ranh giá»›i.
      */
-    private static final double HOVER_THRESHOLD = 8.0; // đơn vị thế giới
+    private static final double HOVER_THRESHOLD = 8.0; // Ä‘Æ¡n vá»‹ tháº¿ giá»›i
 
     private HoverResult hitTestBoundary(double worldX, double worldY) {
         if (network == null) return null;
@@ -468,8 +523,8 @@ public class SimulationView extends Canvas {
         HoverResult best = null;
         double bestDist = HOVER_THRESHOLD;
 
-        // Chỉ kiểm tra ranh giới trên đường đang được chọn (selectedSegment)
-        // Không cho phép sửa vạch của đường khác khi đang ở EDIT_MARKINGS
+        // Chá»‰ kiá»ƒm tra ranh giá»›i trÃªn Ä‘Æ°á»ng Ä‘ang Ä‘Æ°á»£c chá»n (selectedSegment)
+        // KhÃ´ng cho phÃ©p sá»­a váº¡ch cá»§a Ä‘Æ°á»ng khÃ¡c khi Ä‘ang á»Ÿ EDIT_MARKINGS
         Iterable<RoadSegment> candidates = (selectedSegment != null)
                 ? java.util.Collections.singletonList(selectedSegment)
                 : network.getSegments();
@@ -488,14 +543,14 @@ public class SimulationView extends Canvas {
 
             List<Lane> lanes = seg.getLanes();
 
-            // SỬA LỖI: Chuyển đổi 3.5m thành 20 pixels thế giới
+            // Sá»¬A Lá»–I: Chuyá»ƒn Ä‘á»•i 3.5m thÃ nh 20 pixels tháº¿ giá»›i
             double totalWorldWidth = lanes.stream().mapToDouble(l -> (l.getWidth() / 3.5) * 20.0).sum();
 
             if (Math.abs(localY) > totalWorldWidth / 2.0 + HOVER_THRESHOLD) continue;
 
             double boundaryPos = -totalWorldWidth / 2.0;
             for (int i = 0; i < lanes.size() - 1; i++) {
-                boundaryPos += (lanes.get(i).getWidth() / 3.5) * 20.0; // Sử dụng scale 20.0
+                boundaryPos += (lanes.get(i).getWidth() / 3.5) * 20.0; // Sá»­ dá»¥ng scale 20.0
 
                 double dist = Math.abs(localY - boundaryPos);
                 if (dist < bestDist) {
@@ -510,20 +565,20 @@ public class SimulationView extends Canvas {
         return best;
     }
 
-    // ════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // POPUP MENU (EDIT_MARKINGS mode)
-    // ════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-    // ── Road info popup ───────────────────────────────────────
-    // Hover  → info text đi theo chuột, không có nút Sửa
-    // Click trái → popup đứng yên, hiện nút ✏ Sửa
-    // Mất focus window → tự ẩn
+    // â”€â”€ Road info popup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Hover  â†’ info text Ä‘i theo chuá»™t, khÃ´ng cÃ³ nÃºt Sá»­a
+    // Click trÃ¡i â†’ popup Ä‘á»©ng yÃªn, hiá»‡n nÃºt âœ Sá»­a
+    // Máº¥t focus window â†’ tá»± áº©n
     private final Popup  roadInfoPopup         = new Popup();
     private final Label  roadInfoLabel         = new Label();
-    private final Button roadInfoEditBtn       = new Button("✏  Sửa đường này");
-    private final Button roadInfoEditMarkBtn   = new Button("🎨  Sửa vạch kẻ");
+    private final Button roadInfoEditBtn       = new Button("âœ  Sá»­a Ä‘Æ°á»ng nÃ y");
+    private final Button roadInfoEditMarkBtn   = new Button("ðŸŽ¨  Sá»­a váº¡ch káº»");
     private RoadSegment  tipSegment  = null;
-    private boolean      tipPinned   = false;   // true = chuột phải đã pin
+    private boolean      tipPinned   = false;   // true = chuá»™t pháº£i Ä‘Ã£ pin
 
     {
         roadInfoLabel.setStyle(
@@ -531,12 +586,12 @@ public class SimulationView extends Canvas {
                         "-fx-text-fill:#c8d0e8; -fx-padding:0;");
         roadInfoLabel.setWrapText(false);
 
-        // Dòng hướng dẫn — hiện khi hover, ẩn khi pin
-        Label hintLabel = new Label("🖱  Chuột phải để ghim  •  Click ngoài để đóng");
+        // DÃ²ng hÆ°á»›ng dáº«n â€” hiá»‡n khi hover, áº©n khi pin
+        Label hintLabel = new Label("ðŸ–±  Chuá»™t pháº£i Ä‘á»ƒ ghim  â€¢  Click ngoÃ i Ä‘á»ƒ Ä‘Ã³ng");
         hintLabel.setStyle(
                 "-fx-font-size:10px; -fx-text-fill:#4a6080; -fx-padding:2 0 0 0;");
 
-        // Nút Sửa đường này
+        // NÃºt Sá»­a Ä‘Æ°á»ng nÃ y
         roadInfoEditBtn.setStyle(
                 "-fx-background-color:#2a5040; -fx-text-fill:#80e8a0;" +
                         "-fx-font-size:11px; -fx-cursor:hand; -fx-padding:5 16 5 16;" +
@@ -553,7 +608,7 @@ public class SimulationView extends Canvas {
             }
         });
 
-        // Nút Sửa vạch kẻ
+        // NÃºt Sá»­a váº¡ch káº»
         roadInfoEditMarkBtn.setStyle(
                 "-fx-background-color:#2a3a60; -fx-text-fill:#80b8ff;" +
                         "-fx-font-size:11px; -fx-cursor:hand; -fx-padding:5 16 5 16;" +
@@ -566,17 +621,17 @@ public class SimulationView extends Canvas {
             hideRoadTip();
             if (seg != null) {
                 selectedSegment = seg;
-                previousMode = currentMode; // nhớ mode để restore khi thoát
+                previousMode = currentMode; // nhá»› mode Ä‘á»ƒ restore khi thoÃ¡t
                 setInteractionType(InteractionType.EDIT_MARKINGS);
                 if (onMarkingModeEntered != null) onMarkingModeEntered.accept(previousMode);
             }
         });
 
-        // HBox chứa 2 nút cạnh nhau
+        // HBox chá»©a 2 nÃºt cáº¡nh nhau
         javafx.scene.layout.HBox btnRow = new javafx.scene.layout.HBox(8,
                 roadInfoEditBtn, roadInfoEditMarkBtn);
 
-        // hintLabel là index 1, btnRow là index 2
+        // hintLabel lÃ  index 1, btnRow lÃ  index 2
         VBox box = new VBox(6, roadInfoLabel, hintLabel, btnRow);
         box.setStyle(
                 "-fx-background-color:#0d1420e8; -fx-border-color:#3a4a6a;" +
@@ -588,35 +643,35 @@ public class SimulationView extends Canvas {
         roadInfoPopup.setConsumeAutoHidingEvents(false);
     }
 
-    /** Dựng lại nội dung label từ segment. */
+    /** Dá»±ng láº¡i ná»™i dung label tá»« segment. */
     private String buildRoadTipText(RoadSegment seg) {
         StringBuilder sb = new StringBuilder();
         if (seg instanceof HighwaySegment hwy) {
-            sb.append("🛣  CAO TỐC | ").append(seg.getLaneCount()).append(" làn");
-            sb.append("  ≥").append((int)hwy.getMinSpeedLimit()).append(" km/h");
-            if (hwy.hasEmergencyLane()) sb.append("  🟠Làn KC");
+            sb.append("ðŸ›£  CAO Tá»C | ").append(seg.getLaneCount()).append(" lÃ n");
+            sb.append("  â‰¥").append((int)hwy.getMinSpeedLimit()).append(" km/h");
+            if (hwy.hasEmergencyLane()) sb.append("  ðŸŸ LÃ n KC");
         } else if (seg instanceof HighwayRampSegment ramp) {
             sb.append(ramp.getRampType() == HighwayRampSegment.RampType.ONRAMP
-                    ? "⤵  VÀO CAO TỐC" : "⤴  RA CAO TỐC");
-            sb.append(" | ").append(seg.getLaneCount()).append(" làn");
+                    ? "â¤µ  VÃ€O CAO Tá»C" : "â¤´  RA CAO Tá»C");
+            sb.append(" | ").append(seg.getLaneCount()).append(" lÃ n");
         } else {
-            sb.append("🛣  Đường thường | ").append(seg.getLaneCount()).append(" làn");
+            sb.append("ðŸ›£  ÄÆ°á»ng thÆ°á»ng | ").append(seg.getLaneCount()).append(" lÃ n");
         }
         sb.append(String.format("  |  %.0f m\n", seg.getLength() / 20.0 * 3.5));
         for (Lane l : seg.getLanes()) {
-            sb.append(l.getDirection() == Lane.Direction.FORWARD ? "  →" : "  ←");
+            sb.append(l.getDirection() == Lane.Direction.FORWARD ? "  â†’" : "  â†");
             sb.append(String.format(" %.1fm", l.getWidth()));
-            if (l.getAllowedVehicles().contains(Lane.VehicleCategory.CAR))       sb.append(" 🚗");
-            if (l.getAllowedVehicles().contains(Lane.VehicleCategory.MOTORBIKE)) sb.append("🛵");
-            if (l.getAllowedVehicles().contains(Lane.VehicleCategory.BUS))       sb.append("🚌");
-            if (l.getAllowedVehicles().contains(Lane.VehicleCategory.TRUCK))     sb.append("🚛");
-            if (l.getAllowedVehicles().contains(Lane.VehicleCategory.BICYCLE))   sb.append("🚲");
-            if (l.getAllowedVehicles().contains(Lane.VehicleCategory.EMERGENCY)) sb.append("🚨");
+            if (l.getAllowedVehicles().contains(Lane.VehicleCategory.CAR))       sb.append(" ðŸš—");
+            if (l.getAllowedVehicles().contains(Lane.VehicleCategory.MOTORBIKE)) sb.append("ðŸ›µ");
+            if (l.getAllowedVehicles().contains(Lane.VehicleCategory.BUS))       sb.append("ðŸšŒ");
+            if (l.getAllowedVehicles().contains(Lane.VehicleCategory.TRUCK))     sb.append("ðŸš›");
+            if (l.getAllowedVehicles().contains(Lane.VehicleCategory.BICYCLE))   sb.append("ðŸš²");
+            if (l.getAllowedVehicles().contains(Lane.VehicleCategory.EMERGENCY)) sb.append("ðŸš¨");
             sb.append("  [");
-            if (l.getAllowedMovements().contains(Lane.Movement.STRAIGHT)) sb.append("↑");
-            if (l.getAllowedMovements().contains(Lane.Movement.LEFT))     sb.append("↰");
-            if (l.getAllowedMovements().contains(Lane.Movement.RIGHT))    sb.append("↱");
-            if (l.getAllowedMovements().contains(Lane.Movement.U_TURN))  sb.append("↩");
+            if (l.getAllowedMovements().contains(Lane.Movement.STRAIGHT)) sb.append("â†‘");
+            if (l.getAllowedMovements().contains(Lane.Movement.LEFT))     sb.append("â†°");
+            if (l.getAllowedMovements().contains(Lane.Movement.RIGHT))    sb.append("â†±");
+            if (l.getAllowedMovements().contains(Lane.Movement.U_TURN))  sb.append("â†©");
             sb.append("]\n");
         }
         return sb.toString().trim();
@@ -628,7 +683,7 @@ public class SimulationView extends Canvas {
             tipSegment = seg;
             roadInfoLabel.setText(buildRoadTipText(seg));
         }
-        // Hover: hint visible, hàng nút ẩn
+        // Hover: hint visible, hÃ ng nÃºt áº©n
         VBox box = (VBox) roadInfoPopup.getContent().get(0);
         box.getChildren().get(1).setVisible(true);   // hintLabel
         box.getChildren().get(1).setManaged(true);
@@ -650,7 +705,7 @@ public class SimulationView extends Canvas {
         tipPinned = true;
         tipSegment = seg;
         roadInfoLabel.setText(buildRoadTipText(seg));
-        // Pin: ẩn hint, hiện hàng nút (cả 2 nút Sửa)
+        // Pin: áº©n hint, hiá»‡n hÃ ng nÃºt (cáº£ 2 nÃºt Sá»­a)
         VBox box = (VBox) roadInfoPopup.getContent().get(0);
         box.getChildren().get(1).setVisible(false);  // hintLabel
         box.getChildren().get(1).setManaged(false);
@@ -660,7 +715,7 @@ public class SimulationView extends Canvas {
         roadInfoEditBtn.setManaged(true);
         roadInfoEditMarkBtn.setVisible(true);
         roadInfoEditMarkBtn.setManaged(true);
-        // Luôn show tại vị trí mới — kể cả đang hiện từ hover trước đó
+        // LuÃ´n show táº¡i vá»‹ trÃ­ má»›i â€” ká»ƒ cáº£ Ä‘ang hiá»‡n tá»« hover trÆ°á»›c Ä‘Ã³
         roadInfoPopup.hide();
         roadInfoPopup.show(this, screenX + 18, screenY + 14);
     }
@@ -672,7 +727,7 @@ public class SimulationView extends Canvas {
         roadInfoEditBtn.setManaged(false);
         roadInfoEditMarkBtn.setVisible(false);
         roadInfoEditMarkBtn.setManaged(false);
-        // Ẩn btnRow
+        // áº¨n btnRow
         VBox box = (VBox) roadInfoPopup.getContent().get(0);
         if (box.getChildren().size() > 2) {
             box.getChildren().get(2).setVisible(false);
@@ -680,7 +735,7 @@ public class SimulationView extends Canvas {
         }
         roadInfoPopup.hide();
     }
-    // ── Marking picker popup ──────────────────────────────────
+    // â”€â”€ Marking picker popup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     private Popup activeMarkingPopup = null;
     private ContextMenu activeMenu = null;
 
@@ -695,44 +750,44 @@ public class SimulationView extends Canvas {
         Lane currentLane = target.seg.getLanes().get(target.boundaryIndex - 1);
         Lane.MarkingType current = currentLane.getRightMarking();
 
-        // Xác định màu hiện tại (vàng hay trắng)
+        // XÃ¡c Ä‘á»‹nh mÃ u hiá»‡n táº¡i (vÃ ng hay tráº¯ng)
         boolean isYellow = (current == Lane.MarkingType.YELLOW_SOLID
                 || current == Lane.MarkingType.YELLOW_DASHED
                 || current == Lane.MarkingType.YELLOW_DOUBLE_SOLID
                 || current == Lane.MarkingType.YELLOW_LEFT_DASHED_RIGHT_SOLID
                 || current == Lane.MarkingType.YELLOW_LEFT_SOLID_RIGHT_DASHED);
 
-        // ── Danh sách kiểu vạch (style → white variant, yellow variant) ──
+        // â”€â”€ Danh sÃ¡ch kiá»ƒu váº¡ch (style â†’ white variant, yellow variant) â”€â”€
         record MarkEntry(String label, Lane.MarkingType white, Lane.MarkingType yellow) {}
         List<MarkEntry> entries = List.of(
-                new MarkEntry("Nét đứt",               Lane.MarkingType.DASHED,                     Lane.MarkingType.YELLOW_DASHED),
-                new MarkEntry("Nét liền",              Lane.MarkingType.SOLID,                      Lane.MarkingType.YELLOW_SOLID),
-                new MarkEntry("Nét đôi",               Lane.MarkingType.DOUBLE_SOLID,               Lane.MarkingType.YELLOW_DOUBLE_SOLID),
-                new MarkEntry("Trái đứt / Phải liền", Lane.MarkingType.LEFT_DASHED_RIGHT_SOLID,     Lane.MarkingType.YELLOW_LEFT_DASHED_RIGHT_SOLID),
-                new MarkEntry("Trái liền / Phải đứt", Lane.MarkingType.LEFT_SOLID_RIGHT_DASHED,     Lane.MarkingType.YELLOW_LEFT_SOLID_RIGHT_DASHED),
-                new MarkEntry("Xóa vạch",              Lane.MarkingType.NONE,                       Lane.MarkingType.NONE)
+                new MarkEntry("NÃ©t Ä‘á»©t",               Lane.MarkingType.DASHED,                     Lane.MarkingType.YELLOW_DASHED),
+                new MarkEntry("NÃ©t liá»n",              Lane.MarkingType.SOLID,                      Lane.MarkingType.YELLOW_SOLID),
+                new MarkEntry("NÃ©t Ä‘Ã´i",               Lane.MarkingType.DOUBLE_SOLID,               Lane.MarkingType.YELLOW_DOUBLE_SOLID),
+                new MarkEntry("TrÃ¡i Ä‘á»©t / Pháº£i liá»n", Lane.MarkingType.LEFT_DASHED_RIGHT_SOLID,     Lane.MarkingType.YELLOW_LEFT_DASHED_RIGHT_SOLID),
+                new MarkEntry("TrÃ¡i liá»n / Pháº£i Ä‘á»©t", Lane.MarkingType.LEFT_SOLID_RIGHT_DASHED,     Lane.MarkingType.YELLOW_LEFT_SOLID_RIGHT_DASHED),
+                new MarkEntry("XÃ³a váº¡ch",              Lane.MarkingType.NONE,                       Lane.MarkingType.NONE)
         );
 
-        // Xác định entry hiện tại đang chọn
+        // XÃ¡c Ä‘á»‹nh entry hiá»‡n táº¡i Ä‘ang chá»n
         MarkEntry currentEntry = entries.stream()
                 .filter(en -> en.white() == current || en.yellow() == current)
                 .findFirst().orElse(entries.get(0));
 
-        // ── Toggle màu ────────────────────────────────────────
+        // â”€â”€ Toggle mÃ u â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         javafx.beans.property.BooleanProperty yellowMode =
                 new javafx.beans.property.SimpleBooleanProperty(isYellow);
 
-        // ── Build popup content ───────────────────────────────
+        // â”€â”€ Build popup content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(0);
         root.setStyle(
                 "-fx-background-color:#16202e; -fx-border-color:#3a4a6a;" +
                         "-fx-border-width:1; -fx-background-radius:6; -fx-border-radius:6;");
 
-        // Header: chọn màu trắng / vàng
+        // Header: chá»n mÃ u tráº¯ng / vÃ ng
         javafx.scene.layout.HBox colorRow = new javafx.scene.layout.HBox(0);
         colorRow.setStyle("-fx-padding:6 8 6 8; -fx-border-color:transparent transparent #2a3a55 transparent; -fx-border-width:0 0 1 0;");
-        Button btnWhite  = new Button("⬜ Trắng");
-        Button btnYellow = new Button("🟡 Vàng");
+        Button btnWhite  = new Button("â¬œ Tráº¯ng");
+        Button btnYellow = new Button("ðŸŸ¡ VÃ ng");
         String baseBtn   = "-fx-font-size:11px; -fx-cursor:hand; -fx-padding:3 12 3 12;" +
                 "-fx-background-radius:3; -fx-border-radius:3; -fx-border-width:1;";
         Runnable refreshColors = () -> {
@@ -753,10 +808,10 @@ public class SimulationView extends Canvas {
 
         root.getChildren().add(colorRow);
 
-        // Danh sách vạch
+        // Danh sÃ¡ch váº¡ch
         for (MarkEntry entry : entries) {
             boolean isCurrent = (entry == currentEntry);
-            Button btn = new Button((isCurrent ? "✔  " : "     ") + entry.label());
+            Button btn = new Button((isCurrent ? "âœ”  " : "     ") + entry.label());
             btn.setMaxWidth(Double.MAX_VALUE);
             btn.setStyle(
                     "-fx-background-color:" + (isCurrent ? "#1e3a5a" : "transparent") + ";" +
@@ -795,8 +850,8 @@ public class SimulationView extends Canvas {
         newLanes.set(target.boundaryIndex,     rightLane.withLeftMarking(type));
         RoadSegment newSeg = target.seg.withNewLanes(newLanes);
         network.replaceSegment(target.seg, newSeg);
-        // Cập nhật selectedSegment sang object mới — tránh stale reference
-        // (Lane là immutable nên replaceSegment tạo object hoàn toàn mới)
+        // Cáº­p nháº­t selectedSegment sang object má»›i â€” trÃ¡nh stale reference
+        // (Lane lÃ  immutable nÃªn replaceSegment táº¡o object hoÃ n toÃ n má»›i)
         if (selectedSegment == target.seg) selectedSegment = newSeg;
         hoveredBoundary = null;
         updateRenderData();
@@ -805,22 +860,22 @@ public class SimulationView extends Canvas {
         redraw();
     }
 
-    // ════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // INTERSECTION HIT-TEST HELPERS
-    // ════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     private double[] getIntersectionPointStrict(double x1, double y1, double x2, double y2,
                                                 double x3, double y3, double x4, double y4) {
         double denom = (x1-x2)*(y3-y4) - (y1-y2)*(x3-x4);
         if (denom == 0) return null;
         double t = ((x1-x3)*(y3-y4) - (y1-y3)*(x3-x4)) / denom;
         double u = -((x1-x2)*(y1-y3) - (y1-y2)*(x1-x3)) / denom;
-        // Yêu cầu giao điểm phải nằm TRONG đoạn (không tính endpoint của đường đang vẽ)
-        // và nằm TRONG đoạn existing (không tính endpoint — tránh tạo intersection giả khi kéo dài)
-        boolean tInside = t > 0.01 && t < 0.99;   // điểm trên đường đang vẽ (không tính 2 đầu)
-        boolean uInside = u > 0.01 && u < 0.99;   // điểm nằm thực sự giữa đường existing
+        // YÃªu cáº§u giao Ä‘iá»ƒm pháº£i náº±m TRONG Ä‘oáº¡n (khÃ´ng tÃ­nh endpoint cá»§a Ä‘Æ°á»ng Ä‘ang váº½)
+        // vÃ  náº±m TRONG Ä‘oáº¡n existing (khÃ´ng tÃ­nh endpoint â€” trÃ¡nh táº¡o intersection giáº£ khi kÃ©o dÃ i)
+        boolean tInside = t > 0.01 && t < 0.99;   // Ä‘iá»ƒm trÃªn Ä‘Æ°á»ng Ä‘ang váº½ (khÃ´ng tÃ­nh 2 Ä‘áº§u)
+        boolean uInside = u > 0.01 && u < 0.99;   // Ä‘iá»ƒm náº±m thá»±c sá»± giá»¯a Ä‘Æ°á»ng existing
         if (tInside && uInside)
             return new double[]{x1 + t*(x2-x1), y1 + t*(y2-y1)};
-        // Cho phép t bao gồm điểm đầu/cuối của đường đang vẽ, nhưng u phải là midpoint thật sự
+        // Cho phÃ©p t bao gá»“m Ä‘iá»ƒm Ä‘áº§u/cuá»‘i cá»§a Ä‘Æ°á»ng Ä‘ang váº½, nhÆ°ng u pháº£i lÃ  midpoint tháº­t sá»±
         if (t >= -0.01 && t <= 1.01 && uInside)
             return new double[]{x1 + t*(x2-x1), y1 + t*(y2-y1)};
         return null;
@@ -834,12 +889,12 @@ public class SimulationView extends Canvas {
         HitGroup(double x, double y, double dist) { this.x = x; this.y = y; this.dist = dist; }
     }
 
-    // ════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     // MOUSE EVENTS
-    // ════════════════════════════════════════════════════════════
+    // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
     private void setupEvents() {
 
-        // Scroll = zoom tại vị trí con trỏ
+        // Scroll = zoom táº¡i vá»‹ trÃ­ con trá»
         addEventHandler(ScrollEvent.SCROLL, e -> {
             double delta = e.getDeltaY() > 0 ? 1.1 : 0.9;
             double wx = toWorldX(e.getX()), wy = toWorldY(e.getY());
@@ -849,7 +904,7 @@ public class SimulationView extends Canvas {
             redraw();
         });
 
-        // MOUSE_MOVED — hover highlight (chỉ EDIT mode, không kéo)
+        // MOUSE_MOVED â€” hover highlight (chá»‰ EDIT mode, khÃ´ng kÃ©o)
         addEventHandler(MouseEvent.MOUSE_MOVED, e -> {
             double wx = toWorldX(e.getX()), wy = toWorldY(e.getY());
             if (currentMode == InteractionType.EDIT_MARKINGS) {
@@ -867,12 +922,12 @@ public class SimulationView extends Canvas {
                 if (newSeg != hoveredSegment || newInter != hoveredIntersection) {
                     hoveredSegment = newSeg; hoveredIntersection = newInter; redraw();
                 }
-                // Popup dùng vùng rộng hơn
+                // Popup dÃ¹ng vÃ¹ng rá»™ng hÆ¡n
                 RoadSegment popupSeg = hitTestSegmentForPopup(wx, wy);
                 if (popupSeg != null) showRoadTip(popupSeg, e.getScreenX(), e.getScreenY());
                 else if (!tipPinned) hideRoadTip();
             } else {
-                // PAN / DRAW mode: popup đi theo chuột khi hover trên đường
+                // PAN / DRAW mode: popup Ä‘i theo chuá»™t khi hover trÃªn Ä‘Æ°á»ng
                 RoadSegment hovered = hitTestSegmentForPopup(wx, wy);
                 if (hovered != null)
                     showRoadTip(hovered, e.getScreenX(), e.getScreenY());
@@ -883,13 +938,13 @@ public class SimulationView extends Canvas {
 
         // MOUSE_PRESSED
         addEventHandler(MouseEvent.MOUSE_PRESSED, e -> {
-            // Bỏ qua press đầu tiên sau khi popup đóng (tránh pan/select không mong muốn)
+            // Bá» qua press Ä‘áº§u tiÃªn sau khi popup Ä‘Ã³ng (trÃ¡nh pan/select khÃ´ng mong muá»‘n)
             if (ignoreNextPress) { ignoreNextPress = false; e.consume(); return; }
             if (e.getButton() == MouseButton.SECONDARY) {
                 if (currentMode == InteractionType.EDIT_MARKINGS && hoveredBoundary != null) {
                     showMarkingMenu(hoveredBoundary, e.getScreenX(), e.getScreenY());
                 } else if (currentMode == InteractionType.EDIT_MARKINGS) {
-                    // Chuột phải ra ngoài đường trong EDIT_MARKINGS → thoát, restore mode cũ
+                    // Chuá»™t pháº£i ra ngoÃ i Ä‘Æ°á»ng trong EDIT_MARKINGS â†’ thoÃ¡t, restore mode cÅ©
                     double wxE = toWorldX(e.getX()), wyE = toWorldY(e.getY());
                     if (hitTestSegmentForPopup(wxE, wyE) == null) {
                         selectedSegment = null;
@@ -899,13 +954,13 @@ public class SimulationView extends Canvas {
                     hideActiveMenu();
                     lastMouseX = e.getX(); lastMouseY = e.getY();
                 } else {
-                    // Chuột phải trong BẤT KỲ mode nào: nếu trỏ vào đường → pin popup + nút Sửa
+                    // Chuá»™t pháº£i trong Báº¤T Ká»² mode nÃ o: náº¿u trá» vÃ o Ä‘Æ°á»ng â†’ pin popup + nÃºt Sá»­a
                     double wxR = toWorldX(e.getX()), wyR = toWorldY(e.getY());
                     RoadSegment rightSeg = hitTestSegmentForPopup(wxR, wyR);
                     if (rightSeg != null) {
                         pinRoadTip(rightSeg, e.getScreenX(), e.getScreenY());
                     } else {
-                        // Click chuột phải ra ngoài đường → đóng popup nếu đang pin
+                        // Click chuá»™t pháº£i ra ngoÃ i Ä‘Æ°á»ng â†’ Ä‘Ã³ng popup náº¿u Ä‘ang pin
                         if (tipPinned) hideRoadTip();
                         hideActiveMenu();
                         lastMouseX = e.getX(); lastMouseY = e.getY();
@@ -916,28 +971,28 @@ public class SimulationView extends Canvas {
             if (e.getButton() != MouseButton.PRIMARY) return;
             hideActiveMenu();
 
-            // Click trái ra ngoài đường → ẩn popup nếu đang pin
+            // Click trÃ¡i ra ngoÃ i Ä‘Æ°á»ng â†’ áº©n popup náº¿u Ä‘ang pin
             double wx0 = toWorldX(e.getX()), wy0 = toWorldY(e.getY());
             if (tipPinned && hitTestSegmentForPopup(wx0, wy0) == null) hideRoadTip();
 
-            // Ctrl+Click trong BẤT KỲ mode nào → chọn đường để sửa
+            // Ctrl+Click trong Báº¤T Ká»² mode nÃ o â†’ chá»n Ä‘Æ°á»ng Ä‘á»ƒ sá»­a
             if (e.isControlDown() && currentMode != InteractionType.DELETE) {
                 RoadSegment clicked = hitTestSegment(wx0, wy0);
                 selectedSegment = clicked;
                 if (onSegmentSelected != null) onSegmentSelected.accept(clicked);
                 redraw();
-                if (clicked != null) return; // đừng thực hiện action mode
+                if (clicked != null) return; // Ä‘á»«ng thá»±c hiá»‡n action mode
             }
 
             if (currentMode == InteractionType.PAN) {
-                // Click trái trong PAN mode: chọn đường để sửa (không chọn arm stubs)
+                // Click trÃ¡i trong PAN mode: chá»n Ä‘Æ°á»ng Ä‘á»ƒ sá»­a (khÃ´ng chá»n arm stubs)
                 double wx2 = toWorldX(e.getX()), wy2 = toWorldY(e.getY());
                 RoadSegment clicked = hitTestSegment(wx2, wy2);
-                if (clicked != null && clicked.isConnector()) clicked = null; // bỏ qua stub
+                if (clicked != null && clicked.isConnector()) clicked = null; // bá» qua stub
                 if (clicked != null) {
                     selectedSegment = clicked;
                     redraw();
-                    // Thông báo App cập nhật nút
+                    // ThÃ´ng bÃ¡o App cáº­p nháº­t nÃºt
                     if (onSegmentSelected != null) onSegmentSelected.accept(clicked);
                     return;
                 } else {
@@ -960,7 +1015,7 @@ public class SimulationView extends Canvas {
 
             } else if (currentMode == InteractionType.PLACE_INTERSECTION) {
                 double wx = toWorldX(e.getX()), wy = toWorldY(e.getY());
-                // Snap vào endpoint đường gần nhất nếu có (để đặt junction sát đầu đường)
+                // Snap vÃ o endpoint Ä‘Æ°á»ng gáº§n nháº¥t náº¿u cÃ³ (Ä‘á»ƒ Ä‘áº·t junction sÃ¡t Ä‘áº§u Ä‘Æ°á»ng)
                 double[] ep = snapToEndpoint(wx, wy, 50.0 / scale, Double.MAX_VALUE, Double.MAX_VALUE);
                 if (ep != null) { wx = ep[0]; wy = ep[1]; }
                 else {
@@ -974,11 +1029,11 @@ public class SimulationView extends Canvas {
             } else if (currentMode == InteractionType.DRAW_ROAD) {
                 saveSnapshot();
                 double rawX = toWorldX(e.getX()), rawY = toWorldY(e.getY());
-                // Ưu tiên 1: snap vào endpoint của đường hiện có (không loại trừ gì ở bước press)
+                // Æ¯u tiÃªn 1: snap vÃ o endpoint cá»§a Ä‘Æ°á»ng hiá»‡n cÃ³ (khÃ´ng loáº¡i trá»« gÃ¬ á»Ÿ bÆ°á»›c press)
                 double[] epSnap = snapToEndpoint(rawX, rawY, 60.0 / scale, Double.MAX_VALUE, Double.MAX_VALUE);
                 if (epSnap != null) {
                     drawStartX = epSnap[0]; drawStartY = epSnap[1];
-                    // Ưu tiên 2: snap vào tâm intersection
+                    // Æ¯u tiÃªn 2: snap vÃ o tÃ¢m intersection
                 } else {
                     Intersection mag = network.findNearestIntersection(rawX, rawY, 60.0 / scale);
                     if (mag != null) { drawStartX = mag.getCenterX(); drawStartY = mag.getCenterY(); }
@@ -987,7 +1042,7 @@ public class SimulationView extends Canvas {
                 drawCurrentX = drawStartX; drawCurrentY = drawStartY;
                 isDrawing = true; redraw();
             } else if (currentMode == InteractionType.EDIT_MARKINGS) {
-                // Click trái ra ngoài đường → thoát, restore mode cũ
+                // Click trÃ¡i ra ngoÃ i Ä‘Æ°á»ng â†’ thoÃ¡t, restore mode cÅ©
                 double wx1 = toWorldX(e.getX()), wy1 = toWorldY(e.getY());
                 if (hitTestSegmentForPopup(wx1, wy1) == null) {
                     selectedSegment = null;
@@ -1000,7 +1055,7 @@ public class SimulationView extends Canvas {
         // MOUSE_DRAGGED
         addEventHandler(MouseEvent.MOUSE_DRAGGED, e -> {
             if (e.getButton() == MouseButton.SECONDARY) {
-                // Không pan khi popup đang pin — tránh bản đồ trôi lúc người dùng giữ chuột phải để đọc
+                // KhÃ´ng pan khi popup Ä‘ang pin â€” trÃ¡nh báº£n Ä‘á»“ trÃ´i lÃºc ngÆ°á»i dÃ¹ng giá»¯ chuá»™t pháº£i Ä‘á»ƒ Ä‘á»c
                 if (tipPinned) return;
                 translateX += e.getX() - lastMouseX;
                 translateY += e.getY() - lastMouseY;
@@ -1016,7 +1071,7 @@ public class SimulationView extends Canvas {
                 translateX += dX;
                 translateY += dY;
                 lastMouseX = e.getX(); lastMouseY = e.getY();
-                // Nếu popup đang pinned, di nó theo world (giữ vị trí tương đối)
+                // Náº¿u popup Ä‘ang pinned, di nÃ³ theo world (giá»¯ vá»‹ trÃ­ tÆ°Æ¡ng Ä‘á»‘i)
                 if (tipPinned && roadInfoPopup.isShowing()) {
                     roadInfoPopup.setAnchorX(roadInfoPopup.getAnchorX() + dX);
                     roadInfoPopup.setAnchorY(roadInfoPopup.getAnchorY() + dY);
@@ -1028,11 +1083,11 @@ public class SimulationView extends Canvas {
                 double[] epSnap = snapToEndpoint(rawX, rawY, 60.0 / scale, drawStartX, drawStartY);
                 if (epSnap != null) { drawCurrentX = epSnap[0]; drawCurrentY = epSnap[1]; }
                 else {
-                    // Snap vào intersection
+                    // Snap vÃ o intersection
                     Intersection mag = network.findNearestIntersection(rawX, rawY, 60.0 / scale);
                     if (mag != null) { drawCurrentX = mag.getCenterX(); drawCurrentY = mag.getCenterY(); }
                     else {
-                        // Snap vào điểm bất kỳ trên thân đường
+                        // Snap vÃ o Ä‘iá»ƒm báº¥t ká»³ trÃªn thÃ¢n Ä‘Æ°á»ng
                         double[] segSnap = snapToSegmentPoint(rawX, rawY, 40.0 / scale, drawStartX, drawStartY);
                         if (segSnap != null) { drawCurrentX = segSnap[0]; drawCurrentY = segSnap[1]; }
                         else { drawCurrentX = snap(rawX); drawCurrentY = snap(rawY); }
@@ -1052,7 +1107,7 @@ public class SimulationView extends Canvas {
                 undoStack.pop(); redraw(); return;
             }
 
-            // Roundabout không còn được trigger từ số làn nữa — dùng mode PLACE_INTERSECTION
+            // Roundabout khÃ´ng cÃ²n Ä‘Æ°á»£c trigger tá»« sá»‘ lÃ n ná»¯a â€” dÃ¹ng mode PLACE_INTERSECTION
 
             List<Lane> newLanes = (laneFactory != null)
                     ? laneFactory.apply(currentLaneConfig)
@@ -1062,7 +1117,7 @@ public class SimulationView extends Canvas {
                 commitWithIntersections(drawStartX, drawStartY, drawCurrentX, drawCurrentY, newLanes);
             } else {
                 network.addSegment(makeSegment(drawStartX, drawStartY, drawCurrentX, drawCurrentY, newLanes));
-                // Đồng bộ arm stubs tại 2 endpoint ngay cả khi không autoIntersect
+                // Äá»“ng bá»™ arm stubs táº¡i 2 endpoint ngay cáº£ khi khÃ´ng autoIntersect
                 syncStubLanesAt(drawStartX, drawStartY, newLanes);
                 syncStubLanesAt(drawCurrentX, drawCurrentY, newLanes);
             }
@@ -1071,12 +1126,12 @@ public class SimulationView extends Canvas {
     }
 
     /**
-     * Tạo RoadSegment hoặc HighwaySegment tuỳ theo highwayMode.
+     * Táº¡o RoadSegment hoáº·c HighwaySegment tuá»³ theo highwayMode.
      */
     private RoadSegment makeSegment(double x1, double y1, double x2, double y2, List<Lane> lanes) {
         if (highwayMode) {
             int minLanes = emergencyLane ? 3 : 2;
-            // Đảm bảo đủ làn — highway cần tối thiểu 2 (hoặc 3 nếu có làn khẩn cấp)
+            // Äáº£m báº£o Ä‘á»§ lÃ n â€” highway cáº§n tá»‘i thiá»ƒu 2 (hoáº·c 3 náº¿u cÃ³ lÃ n kháº©n cáº¥p)
             List<Lane> paddedLanes = new ArrayList<>(lanes);
             while (paddedLanes.size() < minLanes) {
                 int idx = paddedLanes.size();
@@ -1093,23 +1148,23 @@ public class SimulationView extends Canvas {
     }
 
     /**
-     * Tạo đường mới từ (x1,y1) đến (x2,y2), tự động cắt và tạo Intersection
-     * tại mọi điểm giao với đường hiện có.
+     * Táº¡o Ä‘Æ°á»ng má»›i tá»« (x1,y1) Ä‘áº¿n (x2,y2), tá»± Ä‘á»™ng cáº¯t vÃ  táº¡o Intersection
+     * táº¡i má»i Ä‘iá»ƒm giao vá»›i Ä‘Æ°á»ng hiá»‡n cÃ³.
      *
-     * Quy tắc quan trọng:
-     * - Nếu giao điểm nằm gần một Intersection có sẵn → đường mới đi QUA intersection đó,
-     *   KHÔNG tạo intersection mới, KHÔNG cắt thêm các segment trong intersection đó.
-     * - Nếu giao điểm nằm giữa một RoadSegment thông thường → cắt đôi, tạo intersection mới.
+     * Quy táº¯c quan trá»ng:
+     * - Náº¿u giao Ä‘iá»ƒm náº±m gáº§n má»™t Intersection cÃ³ sáºµn â†’ Ä‘Æ°á»ng má»›i Ä‘i QUA intersection Ä‘Ã³,
+     *   KHÃ”NG táº¡o intersection má»›i, KHÃ”NG cáº¯t thÃªm cÃ¡c segment trong intersection Ä‘Ã³.
+     * - Náº¿u giao Ä‘iá»ƒm náº±m giá»¯a má»™t RoadSegment thÃ´ng thÆ°á»ng â†’ cáº¯t Ä‘Ã´i, táº¡o intersection má»›i.
      */
     private void commitWithIntersections(double x1, double y1, double x2, double y2, List<Lane> newLanes) {
         List<RoadSegment> snapshot = new ArrayList<>(network.getSegments());
 
-        // ── Bước 1: Thu thập hit points ──────────────────────────────────────
-        // Mỗi "hit" là 1 điểm trên đường đang vẽ mà nó cắt qua đường existing.
-        // Key insight: nếu điểm cắt nằm gần intersection có sẵn → snap vào tâm intersection đó,
-        // và đánh dấu là "existing intersection" (không phải midpoint cut).
+        // â”€â”€ BÆ°á»›c 1: Thu tháº­p hit points â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // Má»—i "hit" lÃ  1 Ä‘iá»ƒm trÃªn Ä‘Æ°á»ng Ä‘ang váº½ mÃ  nÃ³ cáº¯t qua Ä‘Æ°á»ng existing.
+        // Key insight: náº¿u Ä‘iá»ƒm cáº¯t náº±m gáº§n intersection cÃ³ sáºµn â†’ snap vÃ o tÃ¢m intersection Ä‘Ã³,
+        // vÃ  Ä‘Ã¡nh dáº¥u lÃ  "existing intersection" (khÃ´ng pháº£i midpoint cut).
 
-        // Map từ tọa độ → HitGroup
+        // Map tá»« tá»a Ä‘á»™ â†’ HitGroup
         List<HitGroup> hits = new ArrayList<>();
 
         for (RoadSegment existing : snapshot) {
@@ -1121,10 +1176,10 @@ public class SimulationView extends Canvas {
 
             double cx = p[0], cy = p[1];
 
-            // Bỏ qua nếu trùng điểm bắt đầu/kết thúc của đường đang vẽ
+            // Bá» qua náº¿u trÃ¹ng Ä‘iá»ƒm báº¯t Ä‘áº§u/káº¿t thÃºc cá»§a Ä‘Æ°á»ng Ä‘ang váº½
             if (isSamePoint(cx, cy, x1, y1) || isSamePoint(cx, cy, x2, y2)) continue;
 
-            // Tìm intersection có sẵn gần điểm cắt (snap radius lớn hơn: 60 world units)
+            // TÃ¬m intersection cÃ³ sáºµn gáº§n Ä‘iá»ƒm cáº¯t (snap radius lá»›n hÆ¡n: 60 world units)
             Intersection nearInter = network.findNearestIntersection(cx, cy, 60.0);
             boolean isExistingIntersection = (nearInter != null);
             if (isExistingIntersection) {
@@ -1132,7 +1187,7 @@ public class SimulationView extends Canvas {
                 cy = nearInter.getCenterY();
             }
 
-            // Gom vào HitGroup cùng tọa độ
+            // Gom vÃ o HitGroup cÃ¹ng tá»a Ä‘á»™
             final double fcx = cx, fcy = cy;
             HitGroup tgt = hits.stream()
                     .filter(g -> isSamePoint(g.x, g.y, fcx, fcy))
@@ -1143,7 +1198,7 @@ public class SimulationView extends Canvas {
                 tgt.existingIntersection   = nearInter;
                 hits.add(tgt);
             }
-            // Nếu là existing intersection thì không cần cắt segment nào
+            // Náº¿u lÃ  existing intersection thÃ¬ khÃ´ng cáº§n cáº¯t segment nÃ o
             if (!isExistingIntersection) {
                 tgt.crossedSegments.add(existing);
             }
@@ -1156,14 +1211,14 @@ public class SimulationView extends Canvas {
 
         hits.sort((a, b) -> Double.compare(a.dist, b.dist));
 
-        // ── Bước 2: Tạo đường theo từng hit ──────────────────────────────────
+        // â”€â”€ BÆ°á»›c 2: Táº¡o Ä‘Æ°á»ng theo tá»«ng hit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         double curX = x1, curY = y1;
         GeneralIntersection lastNode = null;
 
         for (HitGroup group : hits) {
             if (isSamePoint(curX, curY, group.x, group.y)) continue;
 
-            // Tạo đoạn đường từ vị trí hiện tại đến điểm giao
+            // Táº¡o Ä‘oáº¡n Ä‘Æ°á»ng tá»« vá»‹ trÃ­ hiá»‡n táº¡i Ä‘áº¿n Ä‘iá»ƒm giao
             RoadSegment inPart = new RoadSegment(curX, curY, group.x, group.y, newLanes);
             network.addSegment(inPart);
             if (lastNode != null) lastNode.connectRoad(inPart, ConnectionPoint.End.START);
@@ -1171,7 +1226,7 @@ public class SimulationView extends Canvas {
             GeneralIntersection workNode;
 
             if (group.isExistingIntersection && group.existingIntersection != null) {
-                // Đi qua intersection có sẵn → mở rộng nó thêm 2 nhánh (vào/ra)
+                // Äi qua intersection cÃ³ sáºµn â†’ má»Ÿ rá»™ng nÃ³ thÃªm 2 nhÃ¡nh (vÃ o/ra)
                 Intersection old = group.existingIntersection;
                 int newCap = Math.max(old.getRoadCount() + 2, 8);
                 workNode = new GeneralIntersection(group.x, group.y, newCap);
@@ -1179,12 +1234,12 @@ public class SimulationView extends Canvas {
                     workNode.connectRoad(cp.getSegment(), cp.getEnd());
                 network.removeIntersection(old);
                 network.addIntersection(workNode);
-                // Cập nhật tham chiếu trong các hit tiếp theo nếu chúng cũng snap vào cùng intersection
+                // Cáº­p nháº­t tham chiáº¿u trong cÃ¡c hit tiáº¿p theo náº¿u chÃºng cÅ©ng snap vÃ o cÃ¹ng intersection
                 for (HitGroup later : hits) {
-                    if (later.existingIntersection == old) later.existingIntersection = null; // đã xử lý
+                    if (later.existingIntersection == old) later.existingIntersection = null; // Ä‘Ã£ xá»­ lÃ½
                 }
             } else {
-                // Cắt giữa chừng đường existing → tạo intersection mới
+                // Cáº¯t giá»¯a chá»«ng Ä‘Æ°á»ng existing â†’ táº¡o intersection má»›i
                 workNode = getOrCreateIntersection(group.x, group.y, group.crossedSegments.size());
 
                 for (RoadSegment crossed : group.crossedSegments) {
@@ -1208,46 +1263,46 @@ public class SimulationView extends Canvas {
             curX = group.x; curY = group.y;
         }
 
-        // Đoạn cuối
+        // Äoáº¡n cuá»‘i
         if (!isSamePoint(curX, curY, x2, y2)) {
             RoadSegment tail = new RoadSegment(curX, curY, x2, y2, newLanes);
             network.addSegment(tail);
             if (lastNode != null) lastNode.connectRoad(tail, ConnectionPoint.End.START);
         }
 
-        // ── Bước 3: Đồng bộ số làn arm stubs tại 2 endpoint ─────────────────
-        // Nếu endpoint của đường mới snap vào đầu/cuối của arm stub (connector=true),
-        // thì replace stub để khớp số làn với đường mới → junction fill đúng kích thước
+        // â”€â”€ BÆ°á»›c 3: Äá»“ng bá»™ sá»‘ lÃ n arm stubs táº¡i 2 endpoint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // Náº¿u endpoint cá»§a Ä‘Æ°á»ng má»›i snap vÃ o Ä‘áº§u/cuá»‘i cá»§a arm stub (connector=true),
+        // thÃ¬ replace stub Ä‘á»ƒ khá»›p sá»‘ lÃ n vá»›i Ä‘Æ°á»ng má»›i â†’ junction fill Ä‘Ãºng kÃ­ch thÆ°á»›c
         syncStubLanesAt(x1, y1, newLanes);
         syncStubLanesAt(x2, y2, newLanes);
 
-        // ── Bước 4: Xóa arm stubs đã được "thay thế" bởi đường thật ─────────
-        // Nếu endpoint của đường mới trùng với endpoint của một stub → stub đó không còn cần nữa
+        // â”€â”€ BÆ°á»›c 4: XÃ³a arm stubs Ä‘Ã£ Ä‘Æ°á»£c "thay tháº¿" bá»Ÿi Ä‘Æ°á»ng tháº­t â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // Náº¿u endpoint cá»§a Ä‘Æ°á»ng má»›i trÃ¹ng vá»›i endpoint cá»§a má»™t stub â†’ stub Ä‘Ã³ khÃ´ng cÃ²n cáº§n ná»¯a
         removeStubsReplacedByRoadAt(x1, y1);
         removeStubsReplacedByRoadAt(x2, y2);
     }
 
     /**
-     * Xóa arm stub (connector=true) có endpoint BẮT ĐẦU tại (wx,wy) —
-     * nghĩa là đường thật đã "thế chỗ" stub đó.
-     * Không xóa nếu tại (wx,wy) không có intersection (tức stub chưa được nối vào giao lộ nào).
+     * XÃ³a arm stub (connector=true) cÃ³ endpoint Báº®T Äáº¦U táº¡i (wx,wy) â€”
+     * nghÄ©a lÃ  Ä‘Æ°á»ng tháº­t Ä‘Ã£ "tháº¿ chá»—" stub Ä‘Ã³.
+     * KhÃ´ng xÃ³a náº¿u táº¡i (wx,wy) khÃ´ng cÃ³ intersection (tá»©c stub chÆ°a Ä‘Æ°á»£c ná»‘i vÃ o giao lá»™ nÃ o).
      */
     private void removeStubsReplacedByRoadAt(double wx, double wy) {
         if (network == null) return;
-        // Chỉ xóa khi có intersection thật tại điểm này
+        // Chá»‰ xÃ³a khi cÃ³ intersection tháº­t táº¡i Ä‘iá»ƒm nÃ y
         Intersection inter = network.findNearestIntersection(wx, wy, 60.0);
         if (inter == null) return;
         double icx = inter.getCenterX(), icy = inter.getCenterY();
         for (RoadSegment seg : new ArrayList<>(network.getSegments())) {
             if (!seg.isConnector()) continue;
-            // Stub bắt đầu TỪ tâm giao lộ ra ngoài → đầu START là tâm giao lộ
+            // Stub báº¯t Ä‘áº§u Tá»ª tÃ¢m giao lá»™ ra ngoÃ i â†’ Ä‘áº§u START lÃ  tÃ¢m giao lá»™
             boolean startAtCenter = isSamePoint(seg.getStartX(), seg.getStartY(), icx, icy);
             boolean endAtCenter   = isSamePoint(seg.getEndX(),   seg.getEndY(),   icx, icy);
             if (!startAtCenter && !endAtCenter) continue;
-            // Kiểm tra đầu ngoài (tip) của stub — nếu có đường thật nối vào đó thì xóa stub
+            // Kiá»ƒm tra Ä‘áº§u ngoÃ i (tip) cá»§a stub â€” náº¿u cÃ³ Ä‘Æ°á»ng tháº­t ná»‘i vÃ o Ä‘Ã³ thÃ¬ xÃ³a stub
             double tipX = startAtCenter ? seg.getEndX()   : seg.getStartX();
             double tipY = startAtCenter ? seg.getEndY()   : seg.getStartY();
-            // Đường thật = không phải connector, có endpoint trùng với tip của stub
+            // ÄÆ°á»ng tháº­t = khÃ´ng pháº£i connector, cÃ³ endpoint trÃ¹ng vá»›i tip cá»§a stub
             boolean hasRealRoad = network.getSegments().stream()
                     .anyMatch(s -> !s.isConnector() && s != seg &&
                             (isSamePoint(s.getStartX(), s.getStartY(), tipX, tipY) ||
@@ -1257,11 +1312,11 @@ public class SimulationView extends Canvas {
     }
 
     /**
-     * Nếu tại (wx, wy) có arm stub (connector=true), replace nó bằng bản mới có số làn = newLanes.
-     * Intersection radius sẽ tự tính lại từ số làn mới qua getRenderData().
+     * Náº¿u táº¡i (wx, wy) cÃ³ arm stub (connector=true), replace nÃ³ báº±ng báº£n má»›i cÃ³ sá»‘ lÃ n = newLanes.
+     * Intersection radius sáº½ tá»± tÃ­nh láº¡i tá»« sá»‘ lÃ n má»›i qua getRenderData().
      */
     private void syncStubLanesAt(double wx, double wy, List<Lane> newLanes) {
-        // Sync stubs có endpoint tại (wx, wy)
+        // Sync stubs cÃ³ endpoint táº¡i (wx, wy)
         for (RoadSegment seg : new ArrayList<>(network.getSegments())) {
             if (!seg.isConnector()) continue;
             boolean atStart = isSamePoint(seg.getStartX(), seg.getStartY(), wx, wy);
@@ -1272,7 +1327,7 @@ public class SimulationView extends Canvas {
             updated.setConnector(true);
             network.replaceSegment(seg, updated);
         }
-        // Nếu endpoint gần tâm intersection → sync TẤT CẢ stubs của intersection đó
+        // Náº¿u endpoint gáº§n tÃ¢m intersection â†’ sync Táº¤T Cáº¢ stubs cá»§a intersection Ä‘Ã³
         Intersection inter = network.findNearestIntersection(wx, wy, 60.0);
         if (inter == null) return;
         double icx = inter.getCenterX(), icy = inter.getCenterY();
@@ -1288,15 +1343,15 @@ public class SimulationView extends Canvas {
     }
 
     /**
-     * Tạo danh sách làn mới: giữ pattern chiều (FWD/BWD) từ oldLanes, đổi số lượng theo newLanes.
-     * Dùng thông tin width + vehicle + movement từ newLanes làm template.
+     * Táº¡o danh sÃ¡ch lÃ n má»›i: giá»¯ pattern chiá»u (FWD/BWD) tá»« oldLanes, Ä‘á»•i sá»‘ lÆ°á»£ng theo newLanes.
+     * DÃ¹ng thÃ´ng tin width + vehicle + movement tá»« newLanes lÃ m template.
      */
     private List<Lane> rebuildLanesMatchingCount(List<Lane> oldLanes, List<Lane> newLanes) {
         List<Lane> result = new ArrayList<>();
         int n = newLanes.size();
         for (int i = 0; i < n; i++) {
             Lane template = newLanes.get(i);
-            // Giữ chiều đường từ oldLanes nếu có, không thì dùng template
+            // Giá»¯ chiá»u Ä‘Æ°á»ng tá»« oldLanes náº¿u cÃ³, khÃ´ng thÃ¬ dÃ¹ng template
             Lane.Direction dir = (i < oldLanes.size())
                     ? oldLanes.get(i).getDirection()
                     : template.getDirection();
@@ -1308,15 +1363,15 @@ public class SimulationView extends Canvas {
     }
 
     /**
-     * Lấy Intersection hiện có tại (cx, cy) hoặc tạo mới.
-     * capacity = số đường existing bị cắt + 2 (đường mới vào và ra).
-     * Luôn dùng capacity đủ lớn (tối thiểu 8) để tránh lỗi "vượt quá số đường".
+     * Láº¥y Intersection hiá»‡n cÃ³ táº¡i (cx, cy) hoáº·c táº¡o má»›i.
+     * capacity = sá»‘ Ä‘Æ°á»ng existing bá»‹ cáº¯t + 2 (Ä‘Æ°á»ng má»›i vÃ o vÃ  ra).
+     * LuÃ´n dÃ¹ng capacity Ä‘á»§ lá»›n (tá»‘i thiá»ƒu 8) Ä‘á»ƒ trÃ¡nh lá»—i "vÆ°á»£t quÃ¡ sá»‘ Ä‘Æ°á»ng".
      */
     private GeneralIntersection getOrCreateIntersection(double cx, double cy, int crossedCount) {
         Intersection existNode = network.findNearestIntersection(cx, cy, 5.0);
         if (existNode != null) {
             int oldCount = existNode.getRoadCount();
-            // capacity = số nhánh cũ + 2 nhánh mới (vào/ra) + số đường bị cắt thêm * 2
+            // capacity = sá»‘ nhÃ¡nh cÅ© + 2 nhÃ¡nh má»›i (vÃ o/ra) + sá»‘ Ä‘Æ°á»ng bá»‹ cáº¯t thÃªm * 2
             int newCap = Math.max(oldCount + crossedCount * 2 + 2, 8);
             GeneralIntersection workNode = new GeneralIntersection(cx, cy, newCap);
             for (ConnectionPoint cp : existNode.getConnections())
@@ -1325,7 +1380,7 @@ public class SimulationView extends Canvas {
             network.addIntersection(workNode);
             return workNode;
         } else {
-            // capacity đủ lớn cho mọi trường hợp
+            // capacity Ä‘á»§ lá»›n cho má»i trÆ°á»ng há»£p
             int cap = Math.max(crossedCount * 2 + 2, 8);
             GeneralIntersection workNode = new GeneralIntersection(cx, cy, cap);
             network.addIntersection(workNode);
@@ -1334,7 +1389,7 @@ public class SimulationView extends Canvas {
     }
 
     /**
-     * Đặt vòng xuyến khi dùng DRAW_ROAD với laneConfig > 8.
+     * Äáº·t vÃ²ng xuyáº¿n khi dÃ¹ng DRAW_ROAD vá»›i laneConfig > 8.
      */
     private void placeRoundabout(double x1, double y1, double x2, double y2) {
         double cx = (x1 + x2) / 2.0;
@@ -1347,8 +1402,8 @@ public class SimulationView extends Canvas {
     }
 
     /**
-     * Đặt giao lộ tại tọa độ world (wx, wy) theo loại đang được chọn.
-     * Guard radius nhỏ (25 world units) — không phụ thuộc scale.
+     * Äáº·t giao lá»™ táº¡i tá»a Ä‘á»™ world (wx, wy) theo loáº¡i Ä‘ang Ä‘Æ°á»£c chá»n.
+     * Guard radius nhá» (25 world units) â€” khÃ´ng phá»¥ thuá»™c scale.
      */
     private void placeIntersectionAt(double wx, double wy) {
         if (network.findNearestIntersection(wx, wy, 25.0) != null) return;
@@ -1364,29 +1419,29 @@ public class SimulationView extends Canvas {
         }
         network.addIntersection(inter);
 
-        // Arm stubs: chiều rộng 1 làn = 20 world units → 5 làn = 100 world units half
-        // Stub phải đủ dài để junction radius (minArmLen * 0.4) > halfWidth đường
-        // halfWidth = laneCount * 20 / 2. Cần: stubLen * 0.4 > halfWidth → stubLen > halfWidth * 2.5
+        // Arm stubs: chiá»u rá»™ng 1 lÃ n = 20 world units â†’ 5 lÃ n = 100 world units half
+        // Stub pháº£i Ä‘á»§ dÃ i Ä‘á»ƒ junction radius (minArmLen * 0.4) > halfWidth Ä‘Æ°á»ng
+        // halfWidth = laneCount * 20 / 2. Cáº§n: stubLen * 0.4 > halfWidth â†’ stubLen > halfWidth * 2.5
         int laneCount = currentLaneConfig;
         double halfWidth = laneCount * 20.0 / 2.0;
-        double stubLen  = Math.max(150.0, halfWidth * 3.0); // đủ dài cho mọi độ rộng
+        double stubLen  = Math.max(150.0, halfWidth * 3.0); // Ä‘á»§ dÃ i cho má»i Ä‘á»™ rá»™ng
 
         List<Lane> stubLanes = (laneFactory != null)
                 ? laneFactory.apply(laneCount)
                 : SimulationApp.createLanes(laneCount);
 
         for (int i = 0; i < armCount; i++) {
-            // Góc thực tế theo từng loại giao lộ:
-            // Ngã 3: Bắc + Tây-Nam + Đông-Nam (hình chữ T ngược)
-            // Ngã 4: Bắc Đông Nam Tây
-            // Ngã 5: Bắc + Tây-Bắc + Đông-Bắc + Tây-Nam + Đông-Nam
-            // Ngã 6: đều 60°
+            // GÃ³c thá»±c táº¿ theo tá»«ng loáº¡i giao lá»™:
+            // NgÃ£ 3: Báº¯c + TÃ¢y-Nam + ÄÃ´ng-Nam (hÃ¬nh chá»¯ T ngÆ°á»£c)
+            // NgÃ£ 4: Báº¯c ÄÃ´ng Nam TÃ¢y
+            // NgÃ£ 5: Báº¯c + TÃ¢y-Báº¯c + ÄÃ´ng-Báº¯c + TÃ¢y-Nam + ÄÃ´ng-Nam
+            // NgÃ£ 6: Ä‘á»u 60Â°
             double angleDeg;
             if (armCount == 3) {
-                double[] angles3 = {-90, 150, 30}; // Bắc, Tây-Nam, Đông-Nam (chữ Y)
+                double[] angles3 = {-90, 150, 30}; // Báº¯c, TÃ¢y-Nam, ÄÃ´ng-Nam (chá»¯ Y)
                 angleDeg = angles3[i];
             } else if (armCount == 5) {
-                double[] angles5 = {-90, -162, -18, 126, 54}; // Bắc + 4 nhánh xòe ra
+                double[] angles5 = {-90, -162, -18, 126, 54}; // Báº¯c + 4 nhÃ¡nh xÃ²e ra
                 angleDeg = angles5[i];
             } else {
                 angleDeg = -90 + 360.0 / armCount * i;
@@ -1410,5 +1465,9 @@ public class SimulationView extends Canvas {
             case "ROUNDABOUT_L" -> 100;
             default -> 48;
         };
+    }
+
+    public void setController(com.myteam.traffic.controller.TrafficController controller) {
+        this.controller = controller;
     }
 }
