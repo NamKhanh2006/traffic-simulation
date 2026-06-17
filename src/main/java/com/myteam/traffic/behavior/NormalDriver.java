@@ -111,6 +111,10 @@ public class NormalDriver implements DriverBehavior {
     }
 
     private Action handleSegment(Vehicle v, RoadContext context) {
+        if (context.hasEmergencyApproachingFromBehind()) {
+            return Action.YIELD;
+        }
+
         Vehicle front = context.getNearestFrontVehicle();
 
         if (front != null) {
@@ -144,8 +148,8 @@ public class NormalDriver implements DriverBehavior {
     @Override
     public Action handleRejection(Vehicle v, RoadContext context, Action rejected) {
         return switch (rejected) {
-            case OVERTAKE, CHANGE_LANE -> Action.SLOW_DOWN;
-            case ACCELERATE            -> Action.MOVE_FORWARD;
+            case OVERTAKE, CHANGE_LANE, YIELD -> Action.SLOW_DOWN;
+            case ACCELERATE                   -> Action.MOVE_FORWARD;
             default                    -> Action.SLOW_DOWN;
         };
     }

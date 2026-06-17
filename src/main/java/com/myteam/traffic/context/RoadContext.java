@@ -296,6 +296,31 @@ public class RoadContext {
     }
 
     // Thêm vào class RoadContext, sau các convenience methods (khoảng dòng 200-250)
+    public boolean hasEmergencyApproachingFromBehind() {
+        if (subject.getTravelMode() != TravelMode.ON_SEGMENT) return false;
+        
+        Position myPos = getSubjectPosition();
+        return nearbyVehicles.stream()
+            .filter(other -> other != subject && other.isEmergency())
+            .filter(other -> other.getCurrentSegment() == subject.getCurrentSegment())
+            .anyMatch(other -> {
+                Position otherPos = positionSnapshot.getOrDefault(other, other.getPosition());
+                
+                // Kiểm tra xem 'other' có đang đi cùng chiều không
+                if (other.getCurrentLane() == null || subject.getCurrentLane() == null) return false;
+                if (other.getCurrentLane().getDirection() != subject.getCurrentLane().getDirection()) return false;
+                
+                // CỰC KỲ QUAN TRỌNG: Chỉ nhường đường nếu xe ưu tiên đang đi CÙNG LÀN.
+                // Nếu khác làn thì không cần thiết dạt sang (để tránh lạng lách qua lại).
+                if (other.getCurrentLane() != subject.getCurrentLane()) return false;
+
+                // Tính khoảng cách dọc theo đường. Nếu positive, otherPos là ở phía sau myPos.
+                double gap = otherPos.distanceAlongDirection(subject.getDirection(), myPos);
+                
+                // gap > 0 nghĩa là myPos ở phía trước otherPos (tức là other đang ở phía sau)
+                return gap > 0 && gap < 150.0;
+            });
+    }
 
     // =========================================================
     // Tìm xe phía trước gần nhất
