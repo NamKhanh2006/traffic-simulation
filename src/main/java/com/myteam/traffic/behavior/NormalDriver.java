@@ -22,91 +22,83 @@ public class NormalDriver implements DriverBehavior {
     }
 
     /*
+     * private Action handleIntersectionPath(Vehicle v, RoadContext context) {
+     * IntersectionPath myPath = v.getActivePath();
+     * if (myPath == null) return Action.ACCELERATE;
+     * 
+     * double dt = context.getDeltaTime();
+     * 
+     * // Lấy giá trị snapshot (đầu tick) của chính xe
+     * double myProgress =
+     * context.getSnapshotPathProgress(v).orElse(v.getPathProgress());
+     * double mySpeed = context.getSnapshotSpeed(v).orElse(v.getSpeed());
+     * double myNextProgress = myProgress + mySpeed * dt;
+     * 
+     * // Nếu sắp ra khỏi giao lộ, không kiểm tra nữa
+     * if (myNextProgress >= myPath.getPathLength()) {
+     * return Action.ACCELERATE;
+     * }
+     * 
+     * // Vị trí tương lai của mình
+     * double[] myFuture = myPath.sampleAt(myNextProgress);
+     * Position myFuturePos = new Position(myFuture[0], myFuture[1]);
+     * 
+     * boolean mustStop = false;
+     * 
+     * for (Vehicle other : context.getNearbyVehicles()) {
+     * if (other == v) continue;
+     * if (other.getTravelMode() != TravelMode.ON_INTERSECTION_PATH) continue;
+     * 
+     * IntersectionPath otherPath = other.getActivePath();
+     * if (otherPath == null) continue;
+     * 
+     * // Lấy snapshot của xe khác
+     * double otherProgress =
+     * context.getSnapshotPathProgress(other).orElse(other.getPathProgress());
+     * double otherSpeed = context.getSnapshotSpeed(other).orElse(other.getSpeed());
+     * double otherNextProgress = otherProgress + otherSpeed * dt;
+     * 
+     * // Bỏ qua nếu xe khác đã ra khỏi giao lộ
+     * if (otherNextProgress >= otherPath.getPathLength()) continue;
+     * 
+     * // Chỉ quan tâm xe phía trước (có pathProgress lớn hơn)
+     * if (otherProgress <= myProgress) continue;
+     * 
+     * double[] otherFuture = otherPath.sampleAt(otherNextProgress);
+     * Position otherFuturePos = new Position(otherFuture[0], otherFuture[1]);
+     * 
+     * double futureGap = myFuturePos.distanceTo(otherFuturePos);
+     * if (futureGap < 20.0){
+     * return Action.STOP;
+     * }
+     * else if (futureGap < SAFE_GAP_INTERSECTION) {
+     * //mustStop = true;
+     * //break;
+     * return Action.SLOW_DOWN;
+     * }
+     * }
+     * 
+     * return mustStop ? Action.STOP : Action.ACCELERATE;
+     * }
+     */
     private Action handleIntersectionPath(Vehicle v, RoadContext context) {
         IntersectionPath myPath = v.getActivePath();
-        if (myPath == null) return Action.ACCELERATE;
-
-        double dt = context.getDeltaTime();
-
-        // Lấy giá trị snapshot (đầu tick) của chính xe
-        double myProgress = context.getSnapshotPathProgress(v).orElse(v.getPathProgress());
-        double mySpeed = context.getSnapshotSpeed(v).orElse(v.getSpeed());
-        double myNextProgress = myProgress + mySpeed * dt;
-
-        // Nếu sắp ra khỏi giao lộ, không kiểm tra nữa
-        if (myNextProgress >= myPath.getPathLength()) {
+        if (myPath == null)
             return Action.ACCELERATE;
-        }
-
-        // Vị trí tương lai của mình
-        double[] myFuture = myPath.sampleAt(myNextProgress);
-        Position myFuturePos = new Position(myFuture[0], myFuture[1]);
-
-        boolean mustStop = false;
-
-        for (Vehicle other : context.getNearbyVehicles()) {
-            if (other == v) continue;
-            if (other.getTravelMode() != TravelMode.ON_INTERSECTION_PATH) continue;
-
-            IntersectionPath otherPath = other.getActivePath();
-            if (otherPath == null) continue;
-
-            // Lấy snapshot của xe khác
-            double otherProgress = context.getSnapshotPathProgress(other).orElse(other.getPathProgress());
-            double otherSpeed = context.getSnapshotSpeed(other).orElse(other.getSpeed());
-            double otherNextProgress = otherProgress + otherSpeed * dt;
-
-            // Bỏ qua nếu xe khác đã ra khỏi giao lộ
-            if (otherNextProgress >= otherPath.getPathLength()) continue;
-
-            // Chỉ quan tâm xe phía trước (có pathProgress lớn hơn)
-            if (otherProgress <= myProgress) continue;
-
-            double[] otherFuture = otherPath.sampleAt(otherNextProgress);
-            Position otherFuturePos = new Position(otherFuture[0], otherFuture[1]);
-
-            double futureGap = myFuturePos.distanceTo(otherFuturePos);
-            if (futureGap < 20.0){
-                return Action.STOP;
-            }
-            else if (futureGap < SAFE_GAP_INTERSECTION) {
-                //mustStop = true;
-                //break;
-                return Action.SLOW_DOWN;
-            }
-        }
-
-        return mustStop ? Action.STOP : Action.ACCELERATE;
-    }
-    */
-    private Action handleIntersectionPath(Vehicle v, RoadContext context) {
-        IntersectionPath myPath = v.getActivePath();
-        if (myPath == null) return Action.ACCELERATE;
-
-        double myProgress = v.getPathProgress();
-        double myLen = myPath.getPathLength();
-        
-        // Nếu sắp ra khỏi giao lộ (>80% quỹ đạo), luôn tăng tốc để thoát nhanh
-        if (myProgress >= myLen * 0.8) {
-            return Action.ACCELERATE;
-        }
 
         Position myPos = context.getSnapshotPosition(v).orElse(v.getPosition());
 
         for (Vehicle other : context.getNearbyVehicles()) {
-            if (other == v) continue;
-            if (other.getTravelMode() != TravelMode.ON_INTERSECTION_PATH) continue;
+            if (other == v)
+                continue;
+            if (other.getTravelMode() != TravelMode.ON_INTERSECTION_PATH)
+                continue;
 
             Position otherPos = context.getSnapshotPosition(other).orElse(other.getPosition());
             double dist = myPos.distanceTo(otherPos);
 
-            // Chỉ dừng nếu THỰC SỰ sắp đâm (khoảng cách rất gần)
-            if (dist < 20.0) {
+            if (dist < 45.0) { // Kiểm tra ngưỡng an toàn
                 return Action.STOP;
-            }
-            // Giảm tốc nếu gần
-            if (dist < 35.0) {
-                return Action.SLOW_DOWN;
             }
         }
 
@@ -119,7 +111,8 @@ public class NormalDriver implements DriverBehavior {
             return Action.SLOW_DOWN;
         }
 
-        if (v.getSpeed() < v.getMaxSpeed()) return Action.ACCELERATE;
+        if (v.getSpeed() < v.getMaxSpeed())
+            return Action.ACCELERATE;
         return Action.MOVE_FORWARD;
     }
 
@@ -132,17 +125,19 @@ public class NormalDriver implements DriverBehavior {
 
         if (front != null) {
             double gap = v.getPosition().distanceTo(front.getPosition());
-            
-            // Nếu khoảng cách thực tế quá gần (dưới 1/2 SAFE_DISTANCE) hoặc sắp đâm (TTC < 1.0)
+
+            // Nếu khoảng cách thực tế quá gần (dưới 1/2 SAFE_DISTANCE) hoặc sắp đâm (TTC <
+            // 1.0)
             if (gap < RoadContext.SAFE_DISTANCE * 0.5 || DistanceKeeping.isImminentCollision(v, front)) {
                 return Action.STOP;
             }
             // Nếu chưa quá gần nhưng vi phạm khoảng cách an toàn, hoặc TTC < 2.0
-            if (gap < RoadContext.SAFE_DISTANCE || DistanceKeeping.timeToCollision(v, front) < DistanceKeeping.SAFE_TTC) {
+            if (gap < RoadContext.SAFE_DISTANCE
+                    || DistanceKeeping.timeToCollision(v, front) < DistanceKeeping.SAFE_TTC) {
                 return Action.SLOW_DOWN;
             }
             if (front.getSpeed() < v.getSpeed() &&
-                DistanceKeeping.timeToCollision(v, front) > DistanceKeeping.SAFE_TTC + 1.0) {
+                    DistanceKeeping.timeToCollision(v, front) > DistanceKeeping.SAFE_TTC + 1.0) {
                 return Action.OVERTAKE;
             }
         }
@@ -162,8 +157,8 @@ public class NormalDriver implements DriverBehavior {
     public Action handleRejection(Vehicle v, RoadContext context, Action rejected) {
         return switch (rejected) {
             case OVERTAKE, CHANGE_LANE, YIELD -> Action.SLOW_DOWN;
-            case ACCELERATE                   -> Action.MOVE_FORWARD;
-            default                    -> Action.SLOW_DOWN;
+            case ACCELERATE -> Action.MOVE_FORWARD;
+            default -> Action.SLOW_DOWN;
         };
     }
 }
