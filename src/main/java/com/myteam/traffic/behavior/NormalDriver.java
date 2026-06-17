@@ -83,6 +83,14 @@ public class NormalDriver implements DriverBehavior {
         IntersectionPath myPath = v.getActivePath();
         if (myPath == null) return Action.ACCELERATE;
 
+        double myProgress = v.getPathProgress();
+        double myLen = myPath.getPathLength();
+        
+        // Nếu sắp ra khỏi giao lộ (>80% quỹ đạo), luôn tăng tốc để thoát nhanh
+        if (myProgress >= myLen * 0.8) {
+            return Action.ACCELERATE;
+        }
+
         Position myPos = context.getSnapshotPosition(v).orElse(v.getPosition());
 
         for (Vehicle other : context.getNearbyVehicles()) {
@@ -92,8 +100,13 @@ public class NormalDriver implements DriverBehavior {
             Position otherPos = context.getSnapshotPosition(other).orElse(other.getPosition());
             double dist = myPos.distanceTo(otherPos);
 
-            if (dist < 45.0) { //Kiểm tra ngưỡng an toàn
+            // Chỉ dừng nếu THỰC SỰ sắp đâm (khoảng cách rất gần)
+            if (dist < 20.0) {
                 return Action.STOP;
+            }
+            // Giảm tốc nếu gần
+            if (dist < 35.0) {
+                return Action.SLOW_DOWN;
             }
         }
 

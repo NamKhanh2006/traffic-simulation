@@ -395,6 +395,9 @@ public class TrafficController {
         v.syncPositionFromSegment();
     }
 
+    // Đếm số tick xe bị kẹt trong giao lộ (speed ~0)
+    private final Map<Vehicle, Integer> intersectionStuckCounter = new WeakHashMap<>();
+
     private void executeOnIntersectionPath(Vehicle v, Action action, double deltaTime) {
         IntersectionPath path = v.getActivePath();
         if (path == null) return;
@@ -409,13 +412,26 @@ public class TrafficController {
             case HONK -> v.tryHonk();
             default -> { if (v.getSpeed() < 10.0) v.setSpeed(10.0); }
         }
+
+        // Chống deadlock trong giao lộ: nếu xe bị kẹt (speed quá thấp) quá lâu, ép nó chạy
+        if (v.getSpeed() < 2.0) {
+            int stuck = intersectionStuckCounter.getOrDefault(v, 0) + 1;
+            intersectionStuckCounter.put(v, stuck);
+            if (stuck > 60) { // ~1 giây bị kẹt
+                v.setSpeed(15.0); // Ép xe bò qua
+                intersectionStuckCounter.remove(v);
+            }
+        } else {
+            intersectionStuckCounter.remove(v);
+        }
     
         if (v.getSpeed() > 0) {
-            //v.setPathProgress(v.getPathProgress() + v.getSpeed() * deltaTime);
-            //pathFollower.syncPose(v, path, v.getPathProgress());
             pathFollower.advance(v, deltaTime);
         }
     }
+
+    // Đếm số tick xe đứng đợi ở cuối segment (dùng để chống deadlock)
+    private final Map<Vehicle, Integer> waitTickCounter = new WeakHashMap<>();
 
     private void tryEnterIntersection(Vehicle v) {
         if (v.getTravelMode() != TravelMode.ON_SEGMENT) return;
@@ -425,39 +441,43 @@ public class TrafficController {
                 ? v.getSegmentProgress() >= 1.0
                 : v.getSegmentProgress() <= 0.0;
 
-        if (!readyToEnter) return;
+        if (!readyToEnter) {
+            waitTickCounter.remove(v);
+            return;
+        }
 
         Intersection upcoming = intersectionNavigator.peekUpcomingIntersection(v);
         if (upcoming == null) return;
+
+        // Tăng bộ đếm chờ
+        int waited = waitTickCounter.getOrDefault(v, 0) + 1;
+        waitTickCounter.put(v, waited);
+
+        // Nếu chờ quá 120 tick (~2 giây), cho vào ngay bất kể (chống deadlock)
+        boolean forceEntry = waited > 120;
     
         // Kiểm tra an toàn với các xe đã ở trong giao lộ (canMerge)
-        if (!intersectionNavigator.canMerge(v, upcoming, vehicles)) return;
+        if (!forceEntry && !intersectionNavigator.canMerge(v, upcoming, vehicles)) return;
 
-        // ***** BỔ SUNG: Kiểm tra xe khác trên cùng segment cũng sắp vào *****
-        for (Vehicle other : vehicles) {
-            if (other == v) continue;
-            if (other.getTravelMode() == TravelMode.ON_SEGMENT && other.getCurrentSegment() == v.getCurrentSegment()) {
-                // Xe khác cùng hướng và đang ở cuối đoạn đường (gần intersection)
-                boolean otherReady = (other.getCurrentLane().getDirection() == v.getCurrentLane().getDirection())
-                        ? other.getSegmentProgress() >= 0.98
-                        : other.getSegmentProgress() <= 0.02;
-                if (otherReady) {
-                    // Nếu xe khác quá gần (dưới 30m), không cho vào
-                    double dist = v.getPosition().distanceTo(other.getPosition());
-                    if (dist < 30.0) {
-                        return;
+        // Chỉ kiểm tra xe cùng làn trên cùng segment sắp vào cùng lúc
+        if (!forceEntry) {
+            for (Vehicle other : vehicles) {
+                if (other == v) continue;
+                if (other.getTravelMode() == TravelMode.ON_SEGMENT
+                        && other.getCurrentSegment() == v.getCurrentSegment()
+                        && other.getCurrentLane() == v.getCurrentLane()) {
+                    boolean otherReady = (other.getCurrentLane().getDirection() == Lane.Direction.FORWARD)
+                            ? other.getSegmentProgress() >= 0.98
+                            : other.getSegmentProgress() <= 0.02;
+                    if (otherReady) {
+                        double dist = v.getPosition().distanceTo(other.getPosition());
+                        if (dist < 15.0) {
+                            return;
+                        }
                     }
                 }
             }
-            // Kiểm tra xe đã có planned exit và đang ở gần (tránh hai xe cùng đợi)
-            if (other.getPlannedExit() != PlannedExit.NONE && other.getCurrentSegment() == v.getCurrentSegment()) {
-                double dist = v.getPosition().distanceTo(other.getPosition());
-                if (dist < 40.0) {
-                    return; // nhường cho xe đã chờ trước
-                }
-            }
         }
-        // ********************************************************
 
         IntersectionPath path = intersectionNavigator.buildPath(v);
         if (path == null) {
@@ -471,6 +491,7 @@ public class TrafficController {
 
         v.enterIntersectionPath(path, path.getIntersection());
         v.clearPlannedExit();
+        waitTickCounter.remove(v);
     }
 
     private void tryExitIntersection(Vehicle v) {

@@ -27,7 +27,7 @@ public class IntersectionNavigator {
      * Cộng thêm kích thước xe để xe to (FireTruck) không bị "nuốt" vào xe nhỏ
      * khi hai quỹ đạo đi gần nhau.
      */
-    private static final double MERGE_SAFE_DISTANCE = 30.0;
+    private static final double MERGE_SAFE_DISTANCE = 15.0;
 
     private final RoadNetwork network;
 
