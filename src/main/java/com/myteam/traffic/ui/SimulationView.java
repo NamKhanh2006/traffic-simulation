@@ -66,8 +66,6 @@ public class SimulationView extends Canvas {
     // ── Mô phỏng (spawn + tick) ────────────────────────────────
     private VehicleSpawner spawner;
     private boolean simulationRunning = false;
-    private boolean deleteVehicleMode = false;
-    private Vehicle hoveredVehicle = null;
     private static final double FIXED_DT = 0.033;  // 30 ticks/second
 
     private final javafx.animation.AnimationTimer simLoop = new javafx.animation.AnimationTimer() {
@@ -105,12 +103,6 @@ public class SimulationView extends Canvas {
         if (run) simLoop.start(); else simLoop.stop();
     }
     public boolean isSimulationRunning() { return simulationRunning; }
-
-    public void setDeleteVehicleMode(boolean b) { 
-        this.deleteVehicleMode = b; 
-        if (!b) hoveredVehicle = null; 
-        redraw(); 
-    }
 
     /** Chạy 1 tick thủ công (vd. ngay sau khi thêm xe lúc đang pause) để cập nhật hiển thị. */
     public void stepOnce() {
@@ -457,15 +449,6 @@ public class SimulationView extends Canvas {
             gc.scale(scale, scale);
             for (Vehicle v : controller.getVehicles()) {
                 vehicleRenderer.render(gc, v, true);
-                if (deleteVehicleMode && v == hoveredVehicle) {
-                    gc.save();
-                    gc.translate(v.getX(), v.getY());
-                    gc.rotate(v.getDirection().toDegrees());
-                    gc.setStroke(Color.RED);
-                    gc.setLineWidth(2.0);
-                    gc.strokeRect(-v.getWidth() / 2 - 2, -v.getHeight() / 2 - 2, v.getWidth() + 4, v.getHeight() + 4);
-                    gc.restore();
-                }
             }
             gc.restore();
         }
@@ -934,23 +917,6 @@ public class SimulationView extends Canvas {
         // MOUSE_MOVED — hover highlight (chỉ EDIT mode, không kéo)
         addEventHandler(MouseEvent.MOUSE_MOVED, e -> {
             double wx = toWorldX(e.getX()), wy = toWorldY(e.getY());
-            
-            if (deleteVehicleMode && controller != null) {
-                Vehicle best = null;
-                double bestDist = 15.0; // 15 world units hover radius
-                for (Vehicle v : controller.getVehicles()) {
-                    double dist = Math.hypot(v.getX() - wx, v.getY() - wy);
-                    if (dist < bestDist) {
-                        bestDist = dist;
-                        best = v;
-                    }
-                }
-                if (hoveredVehicle != best) {
-                    hoveredVehicle = best;
-                    redraw();
-                }
-            }
-
             if (currentMode == InteractionType.EDIT_MARKINGS) {
                 HoverResult hit = hitTestBoundary(wx, wy);
                 if (hit != hoveredBoundary) { hoveredBoundary = hit; redraw(); }
@@ -1014,15 +980,6 @@ public class SimulationView extends Canvas {
             }
             if (e.getButton() != MouseButton.PRIMARY) return;
             hideActiveMenu();
-
-            if (deleteVehicleMode && hoveredVehicle != null) {
-                if (controller != null) {
-                    controller.removeVehicle(hoveredVehicle);
-                }
-                hoveredVehicle = null;
-                redraw();
-                return;
-            }
 
             // Click trái ra ngoài đường → ẩn popup nếu đang pin
             double wx0 = toWorldX(e.getX()), wy0 = toWorldY(e.getY());

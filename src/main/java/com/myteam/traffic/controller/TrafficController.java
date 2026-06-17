@@ -71,16 +71,6 @@ public class TrafficController {
             vehicles.add(v);
     }
 
-    public void removeVehicle(Vehicle v) {
-        if (v != null)
-            vehicles.remove(v);
-    }
-
-    public void clearVehicles() {
-        vehicles.clear();
-    }
-
-
     public void addLight(TrafficLight light) {
         if (light != null)
             lights.add(light);
