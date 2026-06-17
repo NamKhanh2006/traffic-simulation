@@ -417,6 +417,24 @@ public class TrafficController {
         if (newProgress < 0.0)
             newProgress = 0.0;
 
+        // Đèn đỏ: chặn xe không vượt qua điểm dừng (progress = 0.97 / 0.03 tùy chiều)
+        // Điều này đảm bảo xe dừng hẳn trước vạch kẻ đường chứ không lấn vào giao lộ.
+        if (getCurrentLightState(v, false) == TrafficLightState.RED) {
+            boolean isFwd = v.getCurrentLane().getDirection() == Lane.Direction.FORWARD;
+            double stopLimit = isFwd ? 0.97 : 0.03;
+            if (isFwd) {
+                if (newProgress >= stopLimit) {
+                    newProgress = Math.min(newProgress, stopLimit);
+                    v.setSpeed(0);
+                }
+            } else {
+                if (newProgress <= stopLimit) {
+                    newProgress = Math.max(newProgress, stopLimit);
+                    v.setSpeed(0);
+                }
+            }
+        }
+
         // Lấy vị trí dự kiến
         double[] newPose = seg.getPositionOnLane(v.getCurrentLane().getIndex(), newProgress);
         Position newPos = new Position(newPose[0], newPose[1]);
@@ -487,6 +505,14 @@ public class TrafficController {
         Intersection upcoming = intersectionNavigator.peekUpcomingIntersection(v);
         if (upcoming == null)
             return;
+
+        // Kiểm tra đèn đỏ không phụ thuộc vào ngưỡng segmentProgress —
+        // khi xe đã đến đầu đường (progress=1.0), đèn đỏ phải chặn hoàn toàn.
+        if (getCurrentLightState(v, false) == TrafficLightState.RED) {
+            // Phanh gấp để giữ xe ở cuối đường
+            v.setSpeed(0);
+            return;
+        }
 
         // Kiểm tra an toàn với các xe đã ở trong giao lộ (canMerge)
         if (!intersectionNavigator.canMerge(v, upcoming, vehicles))
@@ -562,20 +588,41 @@ public class TrafficController {
         }
     }
 
-    // FIX LỖI GIẬT CỤC: Xe chỉ tuân theo đèn giao thông khi đang đứng sát mép giao
-    // lộ
-    private TrafficLightState getCurrentLightState(Vehicle subject) {
-        if (lights.isEmpty() || subject.getCurrentLane() == null)
+    /**
+     * Trả về trạng thái đèn giao thông hiện tại cho xe subject.
+     *
+     * Tìm đèn có controlledSegment == segment hiện tại của xe.
+     * Không giới hạn theo segmentProgress để đảm bảo tryEnterIntersection
+     * luôn có thể kiểm tra được.
+     *
+     * @param subject     Xe cần kiểm tra
+     * @param nearEndOnly Nếu true, chỉ trả về trạng thái khi xe gần cuối đường
+     */
+    private TrafficLightState getCurrentLightState(Vehicle subject, boolean nearEndOnly) {
+        if (lights.isEmpty() || subject.getCurrentLane() == null || subject.getCurrentSegment() == null)
             return TrafficLightState.GREEN;
 
-        boolean nearEnd = (subject.getCurrentLane().getDirection() == Lane.Direction.FORWARD)
-                ? subject.getSegmentProgress() > 0.85
-                : subject.getSegmentProgress() < 0.15;
+        if (nearEndOnly) {
+            boolean nearEnd = (subject.getCurrentLane().getDirection() == Lane.Direction.FORWARD)
+                    ? subject.getSegmentProgress() > 0.80
+                    : subject.getSegmentProgress() < 0.20;
+            if (!nearEnd)
+                return TrafficLightState.GREEN;
+        }
 
-        if (!nearEnd)
-            return TrafficLightState.GREEN; // Trả về Green nếu đang ở giữa đường
+        RoadSegment subjectSeg = subject.getCurrentSegment();
+        for (TrafficLight light : lights) {
+            if (light.getControlledSegment() == subjectSeg) {
+                return light.getCurrentState();
+            }
+        }
 
-        return lights.get(0).getCurrentState();
+        return TrafficLightState.GREEN;
+    }
+
+    // Overload giữ nguyên chữ ký cũ — dùng trong buildContext (nearEndOnly=true)
+    private TrafficLightState getCurrentLightState(Vehicle subject) {
+        return getCurrentLightState(subject, true);
     }
 
     public List<Vehicle> getVehicles() {

@@ -5,17 +5,21 @@ import java.util.Optional;
 /**
  * Đèn giao thông trừu tượng.
  *
- * <p>Vòng trạng thái cố định: RED → GREEN → YELLOW → RED → ...</p>
+ * <p>
+ * Vòng trạng thái cố định: RED → GREEN → YELLOW → RED → ...
+ * </p>
  *
- * <p>Mỗi subclass quyết định <b>khi nào</b> chuyển trạng thái
+ * <p>
+ * Mỗi subclass quyết định <b>khi nào</b> chuyển trạng thái
  * bằng cách override {@link #tick()}.
  * Renderer quyết định <b>hiển thị gì</b> bằng cách gọi
- * {@link #getCountdownDisplay()} — tách biệt hoàn toàn hai mối quan tâm.</p>
+ * {@link #getCountdownDisplay()} — tách biệt hoàn toàn hai mối quan tâm.
+ * </p>
  *
  * <ul>
- *   <li>{@link CountdownLight}  — luôn hiển thị đếm ngược.</li>
- *   <li>{@link NoCountdownLight} — không bao giờ hiển thị số giây.</li>
- *   <li>{@link TenSecLight}     — chỉ hiển thị khi còn ≤ 10 giây.</li>
+ * <li>{@link CountdownLight} — luôn hiển thị đếm ngược.</li>
+ * <li>{@link NoCountdownLight} — không bao giờ hiển thị số giây.</li>
+ * <li>{@link TenSecLight} — chỉ hiển thị khi còn ≤ 10 giây.</li>
  * </ul>
  */
 public abstract class TrafficLight {
@@ -26,6 +30,7 @@ public abstract class TrafficLight {
 
     protected double worldX;
     protected double worldY;
+    protected com.myteam.traffic.model.infrastructure.RoadSegment controlledSegment;
 
     protected TrafficLightState currentState;
 
@@ -41,10 +46,10 @@ public abstract class TrafficLight {
     private double timeAccumulator = 0;
 
     public TrafficLight(int redTime, int greenTime, int yellowTime) {
-        this.redTime          = redTime;
-        this.greenTime        = greenTime;
-        this.yellowTime       = yellowTime;
-        this.currentState     = TrafficLightState.RED;
+        this.redTime = redTime;
+        this.greenTime = greenTime;
+        this.yellowTime = yellowTime;
+        this.currentState = TrafficLightState.RED;
         this.secondsRemaining = redTime;
     }
 
@@ -54,6 +59,7 @@ public abstract class TrafficLight {
 
     /**
      * Cập nhật trạng thái đèn dựa trên thời gian trôi qua.
+     * 
      * @param dt Thời gian trôi qua kể từ tick trước (giây).
      */
     public void tick(double dt) {
@@ -95,8 +101,10 @@ public abstract class TrafficLight {
     /**
      * Trả về số giây cần hiển thị trên mặt đèn.
      *
-     * <p>Mỗi subclass tự quyết định có hiển thị không và hiển thị khi nào.
-     * Renderer KHÔNG cần biết đèn thuộc loại nào — chỉ cần gọi method này.</p>
+     * <p>
+     * Mỗi subclass tự quyết định có hiển thị không và hiển thị khi nào.
+     * Renderer KHÔNG cần biết đèn thuộc loại nào — chỉ cần gọi method này.
+     * </p>
      *
      * @return {@code Optional.of(giây)} nếu cần hiển thị,
      *         {@code Optional.empty()} nếu không hiển thị số giây.
@@ -107,18 +115,35 @@ public abstract class TrafficLight {
     // Getters
     // =========================================================
 
-    public double getWorldX() { return worldX; }
-    public double getWorldY() { return worldY; }
+    public double getWorldX() {
+        return worldX;
+    }
+
+    public double getWorldY() {
+        return worldY;
+    }
 
     public void setWorldPosition(double x, double y) {
         this.worldX = x;
         this.worldY = y;
     }
 
-    public TrafficLightState getCurrentState()  { return currentState; }
+    public TrafficLightState getCurrentState() {
+        return currentState;
+    }
 
     /** Số giây còn lại thực tế — dùng cho logic, không phải hiển thị. */
-    public int getSecondsRemaining()            { return secondsRemaining; }
+    public int getSecondsRemaining() {
+        return secondsRemaining;
+    }
+
+    public void setControlledSegment(com.myteam.traffic.model.infrastructure.RoadSegment segment) {
+        this.controlledSegment = segment;
+    }
+
+    public com.myteam.traffic.model.infrastructure.RoadSegment getControlledSegment() {
+        return controlledSegment;
+    }
 
     // =========================================================
     // Helper — dùng bởi subclass
@@ -128,25 +153,33 @@ public abstract class TrafficLight {
      * Chuyển sang trạng thái {@code next} và reset bộ đếm.
      */
     protected void switchTo(TrafficLightState next) {
-        this.currentState     = next;
+        this.currentState = next;
         this.secondsRemaining = getDurationForState(next);
     }
 
     protected int getDurationForState(TrafficLightState state) {
         switch (state) {
-            case RED:    return redTime;
-            case GREEN:  return greenTime;
-            case YELLOW: return yellowTime;
-            default: throw new IllegalArgumentException("Unknown state: " + state);
+            case RED:
+                return redTime;
+            case GREEN:
+                return greenTime;
+            case YELLOW:
+                return yellowTime;
+            default:
+                throw new IllegalArgumentException("Unknown state: " + state);
         }
     }
 
     protected TrafficLightState nextState(TrafficLightState state) {
         switch (state) {
-            case RED:    return TrafficLightState.GREEN;
-            case GREEN:  return TrafficLightState.YELLOW;
-            case YELLOW: return TrafficLightState.RED;
-            default: throw new IllegalArgumentException("Unknown state: " + state);
+            case RED:
+                return TrafficLightState.GREEN;
+            case GREEN:
+                return TrafficLightState.YELLOW;
+            case YELLOW:
+                return TrafficLightState.RED;
+            default:
+                throw new IllegalArgumentException("Unknown state: " + state);
         }
     }
 }

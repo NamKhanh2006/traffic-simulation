@@ -355,6 +355,61 @@ public class SimulationView extends Canvas {
     }
 
     /**
+     * Tìm RoadSegment gần nhất tại điểm (worldX, worldY), KHÔNG loại trừ vùng đầu/cuối đường.
+     * Dùng khi đặt đèn giao thông để cho phép click gần ngã tư.
+     */
+    private RoadSegment findSegmentNearPoint(double worldX, double worldY) {
+        if (network == null) return null;
+        RoadSegment result = null;
+        double bestDist = Double.MAX_VALUE;
+        for (RoadSegment seg : network.getSegments()) {
+            double sx = seg.getStartX(), sy = seg.getStartY();
+            double ex = seg.getEndX(),   ey = seg.getEndY();
+            double dx = ex - sx, dy = ey - sy;
+            double len2 = dx * dx + dy * dy;
+            if (len2 < 1e-6) continue;
+            double t = ((worldX - sx) * dx + (worldY - sy) * dy) / len2;
+            t = Math.max(0.0, Math.min(1.0, t)); // toàn bộ chiều dài, kể cả đầu/cuối
+            double projX = sx + t * dx, projY = sy + t * dy;
+            double d = Math.hypot(worldX - projX, worldY - projY);
+            double halfWidth = seg.getLaneCount() * 20.0 / 2.0 * 1.5; // vùng nhận diện rộng hơn
+            if (d <= halfWidth && d < bestDist) { bestDist = d; result = seg; }
+        }
+        return result;
+    }
+
+    /**
+     * Tìm segment có ENDPOINT (START hoặc END) gần tâm của intersection nhất,
+     * trong số các segment gần điểm click (worldX, worldY).
+     * Dùng để xác định đèn sẽ kiểm soát đường nào khi đặt đèn tại ngã tư.
+     */
+    private RoadSegment findSegmentEndpointNearIntersection(
+            Intersection inter, double clickX, double clickY) {
+        if (inter == null || network == null) return null;
+        double icx = inter.getCenterX(), icy = inter.getCenterY();
+        RoadSegment best = null;
+        double bestScore = Double.MAX_VALUE;
+        for (RoadSegment seg : network.getSegments()) {
+            if (seg.isConnector()) continue;
+            // Endpoint gần intersection
+            boolean startNear = Math.hypot(seg.getStartX() - icx, seg.getStartY() - icy) < 100.0;
+            boolean endNear   = Math.hypot(seg.getEndX()   - icx, seg.getEndY()   - icy) < 100.0;
+            if (!startNear && !endNear) continue;
+            // Khoảng cách từ thân đoạn đường đến điểm click
+            double sx = seg.getStartX(), sy = seg.getStartY();
+            double ex = seg.getEndX(),   ey = seg.getEndY();
+            double dx = ex - sx, dy = ey - sy;
+            double len2 = dx * dx + dy * dy;
+            if (len2 < 1e-6) continue;
+            double t = Math.max(0.0, Math.min(1.0,
+                    ((clickX - sx) * dx + (clickY - sy) * dy) / len2));
+            double dist = Math.hypot(clickX - (sx + t * dx), clickY - (sy + t * dy));
+            if (dist < bestScore) { bestScore = dist; best = seg; }
+        }
+        return best;
+    }
+
+    /**
      * Snap điểm world vào điểm gần nhất nằm TRÊN THÂN đoạn đường (không chỉ endpoint).
      * Trả về [snapX, snapY] nếu tìm thấy, null nếu không.
      * excludeX/excludeY: điểm xuất phát — bỏ qua nếu snap trùng với nó.
@@ -1063,16 +1118,28 @@ public class SimulationView extends Canvas {
                 updateRenderData();
 
             } else if (currentMode == InteractionType.PLACE_TRAFFIC_LIGHT) {
-                // Đặt đèn giao thông tại vị trí click.
-                // Ưu tiên snap vào tâm intersection gần nhất — đèn đặt ở giao lộ
-                // thường hợp lý hơn đặt giữa đường.
                 double wx = toWorldX(e.getX()), wy = toWorldY(e.getY());
-                Intersection nearInter = network.findNearestIntersection(wx, wy, 80.0 / scale);
-                if (nearInter != null) {
-                    wx = nearInter.getCenterX();
-                    wy = nearInter.getCenterY();
+
+                // Tìm segment gần nhất với vị trí click, kể cả gần endpoint (gần ngã tư).
+                // hitTestSegment loại trừ 8% đầu/cuối nên dùng hàm rộng hơn.
+                RoadSegment clickedSeg = findSegmentNearPoint(wx, wy);
+
+                if (clickedSeg != null) {
+                    // Snap vị trí hiển thị đèn vào tâm intersection gần nhất nếu có
+                    Intersection nearInter = network.findNearestIntersection(wx, wy, 100.0 / scale);
+                    double lightX = (nearInter != null) ? nearInter.getCenterX() : wx;
+                    double lightY = (nearInter != null) ? nearInter.getCenterY() : wy;
+
+                    // Nếu click gần intersection, tìm endpoint của segment gần intersection đó
+                    // để gắn đèn vào đúng đầu đường mà xe sắp đến
+                    if (nearInter != null) {
+                        RoadSegment segNearInter = findSegmentEndpointNearIntersection(
+                                nearInter, wx, wy);
+                        if (segNearInter != null) clickedSeg = segNearInter;
+                    }
+
+                    placeTrafficLightAt(lightX, lightY, clickedSeg);
                 }
-                placeTrafficLightAt(wx, wy);
 
             } else if (currentMode == InteractionType.DRAW_ROAD) {
                 saveSnapshot();
@@ -1535,7 +1602,7 @@ public class SimulationView extends Canvas {
      * View biết tọa độ world (đã qua toWorld()), còn App chỉ thấy tọa độ
      * màn hình. Đặt ở đây nhất quán với cách placeIntersectionAt() hoạt động.
      */
-    public void placeTrafficLightAt(double wx, double wy) {
+    public void placeTrafficLightAt(double wx, double wy, RoadSegment controlledSegment) {
         if (controller == null) return;
 
         com.myteam.traffic.light.TrafficLight light = switch (pendingLightType) {
@@ -1551,6 +1618,9 @@ public class SimulationView extends Canvas {
         };
 
         light.setWorldPosition(wx, wy);
+        // Gắn đèn với đoạn đường cụ thể
+        light.setControlledSegment(controlledSegment);
+        
         controller.addLight(light);
         redraw();
     }

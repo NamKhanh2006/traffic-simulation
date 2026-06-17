@@ -1,5 +1,6 @@
 package com.myteam.traffic.ui;
 
+import com.myteam.traffic.marking.RoadMarking;
 import com.myteam.traffic.model.infrastructure.*;
 import com.myteam.traffic.model.infrastructure.intersection.*;
 import javafx.geometry.VPos;
@@ -10,6 +11,7 @@ import javafx.scene.text.FontWeight;
 import javafx.scene.text.TextAlignment;
 import javafx.scene.shape.StrokeLineCap;
 import javafx.scene.shape.StrokeLineJoin;
+import com.myteam.traffic.model.geometry.Position;
 
 import java.util.List;
 
@@ -21,19 +23,19 @@ public class InfrastructureRenderer {
     private final SimulationView view;
 
     // ── Bảng màu ──────────────────────────────────────────────
-    public  static final Color COLOR_BG        = Color.web("#1a1f2e");
-    private static final Color COLOR_HIGHWAY   = Color.web("#283444");
-    private static final Color COLOR_ROAD      = Color.web("#3d4a5c");
-    private static final Color COLOR_RAMP      = Color.web("#3d4a5c");
-    private static final Color COLOR_JUNCTION  = Color.web("#3d4a5c");
-    private static final Color COLOR_ISLAND    = Color.web("#212d3a");
-    private static final Color COLOR_ISLAND_RING= Color.web("#2e3d50");
-    private static final Color COLOR_MARK_YELLOW= Color.web("#e8d44d");
+    public static final Color COLOR_BG = Color.web("#1a1f2e");
+    private static final Color COLOR_HIGHWAY = Color.web("#283444");
+    private static final Color COLOR_ROAD = Color.web("#3d4a5c");
+    private static final Color COLOR_RAMP = Color.web("#3d4a5c");
+    private static final Color COLOR_JUNCTION = Color.web("#3d4a5c");
+    private static final Color COLOR_ISLAND = Color.web("#212d3a");
+    private static final Color COLOR_ISLAND_RING = Color.web("#2e3d50");
+    private static final Color COLOR_MARK_YELLOW = Color.web("#e8d44d");
     private static final Color COLOR_MARK_WHITE = Color.web("#e0e8f0");
-    private static final Color COLOR_GRID      = Color.web("#252b3d");
-    private static final Color COLOR_GRID_LABEL= Color.web("#3a4560");
-    private static final Color COLOR_LABEL     = Color.web("#d4ddf0");
-    private static final Color COLOR_LABEL_BG  = Color.web("#1a1f2e", 0.88);
+    private static final Color COLOR_GRID = Color.web("#252b3d");
+    private static final Color COLOR_GRID_LABEL = Color.web("#3a4560");
+    private static final Color COLOR_LABEL = Color.web("#d4ddf0");
+    private static final Color COLOR_LABEL_BG = Color.web("#1a1f2e", 0.88);
     private static final Color COLOR_EMERGENCY_LANE = Color.web("#ff6b35", 0.25);
 
     private static final double LANE_PX = 20.0;
@@ -74,7 +76,7 @@ public class InfrastructureRenderer {
                 for (double wy = startWorldY; wy * scale + ty < canvasH + step; wy += 100) {
                     double sx = wx * scale + tx, sy = wy * scale + ty;
                     if (sx > -20 && sx < canvasW && sy > -20 && sy < canvasH) {
-                        gc.fillText(String.format("(%d,%d)", (int)wx, (int)wy), sx + 3, sy + 2);
+                        gc.fillText(String.format("(%d,%d)", (int) wx, (int) wy), sx + 3, sy + 2);
                     }
                 }
             }
@@ -83,19 +85,25 @@ public class InfrastructureRenderer {
         double ox = tx, oy = ty;
         gc.setStroke(Color.web("#3a4a70", 0.9));
         gc.setLineWidth(1.5);
-        if (oy > 0 && oy < canvasH) gc.strokeLine(0, oy, canvasW, oy);
-        if (ox > 0 && ox < canvasW) gc.strokeLine(ox, 0, ox, canvasH);
+        if (oy > 0 && oy < canvasH)
+            gc.strokeLine(0, oy, canvasW, oy);
+        if (ox > 0 && ox < canvasW)
+            gc.strokeLine(ox, 0, ox, canvasH);
     }
 
-    private void drawGridLines(GraphicsContext gc, double cw, double ch, double worldStep, double tx, double ty, double scale) {
+    private void drawGridLines(GraphicsContext gc, double cw, double ch, double worldStep, double tx, double ty,
+            double scale) {
         double step = worldStep * scale;
-        if (step < 1) return;
+        if (step < 1)
+            return;
         // Đảm bảo startX/Y luôn ≤ 0 để phủ kín từ mép trái/trên
         double startX = ((tx % step) + step) % step; // luôn trong [0, step)
         double startY = ((ty % step) + step) % step;
         // Vẽ thêm 1 bước ngoài biên để không có khe hở khi scroll
-        for (double x = startX - step; x <= cw + step; x += step) gc.strokeLine(x, 0, x, ch);
-        for (double y = startY - step; y <= ch + step; y += step) gc.strokeLine(0, y, cw, y);
+        for (double x = startX - step; x <= cw + step; x += step)
+            gc.strokeLine(x, 0, x, ch);
+        for (double y = startY - step; y <= ch + step; y += step)
+            gc.strokeLine(0, y, cw, y);
     }
 
     // ════════════════════════════════════════════════════════════
@@ -117,7 +125,7 @@ public class InfrastructureRenderer {
             gc.stroke();
         } else {
             double sx = view.toScreenX(seg.getStartX()), sy = view.toScreenY(seg.getStartY());
-            double ex = view.toScreenX(seg.getEndX()),   ey = view.toScreenY(seg.getEndY());
+            double ex = view.toScreenX(seg.getEndX()), ey = view.toScreenY(seg.getEndY());
 
             if (seg instanceof HighwaySegment hwy) {
                 // Thân cao tốc — màu xanh xám đậm hơn đường thường
@@ -128,22 +136,23 @@ public class InfrastructureRenderer {
 
                 // Viền xanh dương 2 bên — nhận diện nhanh là cao tốc
                 if (scale > 0.3) {
-                    double ang   = Math.atan2(ey - sy, ex - sx);
+                    double ang = Math.atan2(ey - sy, ex - sx);
                     double perpX = Math.cos(ang + Math.PI / 2);
                     double perpY = Math.sin(ang + Math.PI / 2);
-                    double half  = w / 2.0;
+                    double half = w / 2.0;
                     double stripeW = Math.max(1.5, 3.0 * scale);
                     gc.setStroke(Color.web("#4a8fd4", 0.85));
                     gc.setLineWidth(stripeW);
                     // Viền trái
-                    gc.strokeLine(sx + perpX * (half - stripeW/2), sy + perpY * (half - stripeW/2),
-                            ex + perpX * (half - stripeW/2), ey + perpY * (half - stripeW/2));
+                    gc.strokeLine(sx + perpX * (half - stripeW / 2), sy + perpY * (half - stripeW / 2),
+                            ex + perpX * (half - stripeW / 2), ey + perpY * (half - stripeW / 2));
                     // Viền phải
-                    gc.strokeLine(sx - perpX * (half - stripeW/2), sy - perpY * (half - stripeW/2),
-                            ex - perpX * (half - stripeW/2), ey - perpY * (half - stripeW/2));
+                    gc.strokeLine(sx - perpX * (half - stripeW / 2), sy - perpY * (half - stripeW / 2),
+                            ex - perpX * (half - stripeW / 2), ey - perpY * (half - stripeW / 2));
                 }
 
-                if (hwy.hasEmergencyLane()) drawEmergencyLaneHighlight(gc, hwy, scale);
+                if (hwy.hasEmergencyLane())
+                    drawEmergencyLaneHighlight(gc, hwy, scale);
             } else {
                 // Đường thường
                 gc.setStroke(COLOR_ROAD);
@@ -157,20 +166,20 @@ public class InfrastructureRenderer {
 
     private void drawEmergencyLaneHighlight(GraphicsContext gc, HighwaySegment hwy, double scale) {
         Lane lastLane = hwy.getLanes().get(hwy.getLanes().size() - 1);
-        double laneW   = lastLane.getWidth() * scale * 5;
-        double totalW  = roadWidth(hwy, scale);
-        double offset  = totalW / 2.0 - laneW / 2.0;
+        double laneW = lastLane.getWidth() * scale * 5;
+        double totalW = roadWidth(hwy, scale);
+        double offset = totalW / 2.0 - laneW / 2.0;
 
         double sx = view.toScreenX(hwy.getStartX()), sy = view.toScreenY(hwy.getStartY());
-        double ex = view.toScreenX(hwy.getEndX()),   ey = view.toScreenY(hwy.getEndY());
+        double ex = view.toScreenX(hwy.getEndX()), ey = view.toScreenY(hwy.getEndY());
         double ang = Math.atan2(ey - sy, ex - sx);
-        double perpX = Math.cos(ang + Math.PI/2), perpY = Math.sin(ang + Math.PI/2);
+        double perpX = Math.cos(ang + Math.PI / 2), perpY = Math.sin(ang + Math.PI / 2);
 
         gc.save();
         gc.setStroke(COLOR_EMERGENCY_LANE);
         gc.setLineWidth(laneW);
         gc.setLineCap(StrokeLineCap.BUTT);
-        gc.strokeLine(sx + perpX*offset, sy + perpY*offset, ex + perpX*offset, ey + perpY*offset);
+        gc.strokeLine(sx + perpX * offset, sy + perpY * offset, ex + perpX * offset, ey + perpY * offset);
         gc.restore();
     }
 
@@ -186,11 +195,13 @@ public class InfrastructureRenderer {
             drawRoundaboutFill(gc, inter, scx, scy, scale);
             return;
         }
-        if (inter.arms.isEmpty()) return;
+        if (inter.arms.isEmpty())
+            return;
 
         Color fillColor = COLOR_ROAD;
         for (IntersectionRenderData.ArmData arm : inter.arms)
-            if (arm.segment instanceof HighwaySegment) fillColor = COLOR_HIGHWAY;
+            if (arm.segment instanceof HighwaySegment)
+                fillColor = COLOR_HIGHWAY;
 
         double junctionR = inter.radius * scale;
 
@@ -201,18 +212,18 @@ public class InfrastructureRenderer {
         // Mỗi nhánh cho 2 điểm góc (2 mép của đường tại tip)
         // Sắp xếp theo góc → convex polygon phủ kín toàn bộ vùng giao lộ
         java.util.List<double[]> pts = new java.util.ArrayList<>();
-        pts.add(new double[]{scx, scy}); // tâm luôn nằm trong hull
+        pts.add(new double[] { scx, scy }); // tâm luôn nằm trong hull
         for (IntersectionRenderData.ArmData arm : inter.arms) {
-            double hw   = arm.totalWidth * scale * 0.5;
-            double ang  = Math.toRadians(arm.approachAngleDeg);
+            double hw = arm.totalWidth * scale * 0.5;
+            double ang = Math.toRadians(arm.approachAngleDeg);
             double dirX = Math.cos(ang), dirY = Math.sin(ang);
             double perpX = -dirY, perpY = dirX;
             double tipSX = view.toScreenX(arm.tipX), tipSY = view.toScreenY(arm.tipY);
             // 2 góc tại tip + 2 góc sát tâm (để đảm bảo lưỡi được điền)
-            pts.add(new double[]{ tipSX - perpX * hw, tipSY - perpY * hw });
-            pts.add(new double[]{ tipSX + perpX * hw, tipSY + perpY * hw });
-            pts.add(new double[]{ scx   - perpX * hw, scy   - perpY * hw });
-            pts.add(new double[]{ scx   + perpX * hw, scy   + perpY * hw });
+            pts.add(new double[] { tipSX - perpX * hw, tipSY - perpY * hw });
+            pts.add(new double[] { tipSX + perpX * hw, tipSY + perpY * hw });
+            pts.add(new double[] { scx - perpX * hw, scy - perpY * hw });
+            pts.add(new double[] { scx + perpX * hw, scy + perpY * hw });
         }
 
         // Convex hull (Graham scan đơn giản — sort theo góc quanh centroid)
@@ -234,10 +245,10 @@ public class InfrastructureRenderer {
 
     /** Vẽ vòng xuyến với đảo tròn trung tâm + lane tròn bao quanh */
     private void drawRoundaboutFill(GraphicsContext gc, IntersectionRenderData inter,
-                                    double scx, double scy, double scale) {
-        double outerR  = inter.radius * scale;
+            double scx, double scy, double scale) {
+        double outerR = inter.radius * scale;
         // Lòng đường vòng xuyến = 1.5 làn mỗi phía
-        double ringW   = LANE_PX * scale * 2.0;
+        double ringW = LANE_PX * scale * 2.0;
         double islandR = Math.max(outerR * 0.52, outerR - ringW);
 
         gc.save();
@@ -248,17 +259,17 @@ public class InfrastructureRenderer {
 
         // 2. Nhánh nối từ ngoài vào (không vẽ viền — chỉ fill)
         for (IntersectionRenderData.ArmData arm : inter.arms) {
-            double hw  = arm.totalWidth * scale * 0.5;
+            double hw = arm.totalWidth * scale * 0.5;
             double ang = Math.toRadians(arm.approachAngleDeg);
             double dirX = Math.cos(ang), dirY = Math.sin(ang);
             double perpX = -dirY, perpY = dirX;
             double[] px = {
-                    scx + perpX * hw,  scx - perpX * hw,
+                    scx + perpX * hw, scx - perpX * hw,
                     scx + dirX * outerR * 1.35 - perpX * hw,
                     scx + dirX * outerR * 1.35 + perpX * hw
             };
             double[] py = {
-                    scy + perpY * hw,  scy - perpY * hw,
+                    scy + perpY * hw, scy - perpY * hw,
                     scy + dirY * outerR * 1.35 - perpY * hw,
                     scy + dirY * outerR * 1.35 + perpY * hw
             };
@@ -294,32 +305,35 @@ public class InfrastructureRenderer {
         double scale = view.getViewScale();
         double cx = view.toScreenX(data.centerX), cy = view.toScreenY(data.centerY);
 
-        double outerR  = data.radius * scale;
-        double ringW   = LANE_PX * scale * 2.0;  // đồng bộ với drawRoundaboutFill
+        double outerR = data.radius * scale;
+        double ringW = LANE_PX * scale * 2.0; // đồng bộ với drawRoundaboutFill
         double islandR = Math.max(outerR * 0.52, outerR - ringW);
 
         gc.save();
         gc.setFill(COLOR_ISLAND_RING);
-        gc.fillOval(cx - outerR, cy - outerR, outerR*2, outerR*2);
+        gc.fillOval(cx - outerR, cy - outerR, outerR * 2, outerR * 2);
         gc.setFill(COLOR_ISLAND);
-        gc.fillOval(cx - islandR, cy - islandR, islandR*2, islandR*2);
+        gc.fillOval(cx - islandR, cy - islandR, islandR * 2, islandR * 2);
 
         if (scale > 0.3) {
             double markR = (outerR + islandR) / 2;
             gc.setStroke(COLOR_MARK_YELLOW);
             gc.setLineWidth(Math.max(0.7, 1.5 * scale));
             gc.setLineDashes(10 * scale, 8 * scale);
-            gc.strokeOval(cx - markR, cy - markR, markR*2, markR*2);
+            gc.strokeOval(cx - markR, cy - markR, markR * 2, markR * 2);
         }
         gc.restore();
     }
+
     // ════════════════════════════════════════════════════════════
     // 4. VẠCH KẺ ĐƯỜNG
     // ════════════════════════════════════════════════════════════
     public void drawRoadMarks(GraphicsContext gc, RoadSegment seg) {
-        if (seg.isConnector()) return;
+        if (seg.isConnector())
+            return;
         double scale = view.getViewScale();
-        if (scale < 0.18) return;
+        if (scale < 0.18)
+            return;
 
         gc.save();
 
@@ -334,27 +348,33 @@ public class InfrastructureRenderer {
             drawRampCenterLine(gc, ramp, scale);
         } else {
             double sx = view.toScreenX(seg.getStartX()), sy = view.toScreenY(seg.getStartY());
-            double ex = view.toScreenX(seg.getEndX()),   ey = view.toScreenY(seg.getEndY());
+            double ex = view.toScreenX(seg.getEndX()), ey = view.toScreenY(seg.getEndY());
             double ang = Math.atan2(ey - sy, ex - sx);
             double segLen = Math.hypot(ex - sx, ey - sy); // screen pixels
 
             // Tính offset cắt vạch: khoảng cách từ endpoint đến mép vùng tròn junction
-            // Endpoint (sx,sy) là đầu segment trong world, junction tâm có thể không trùng với endpoint
-            // → Tính khoảng cách từ endpoint (screen) đến tâm junction (screen), rồi trừ đi radius (screen)
+            // Endpoint (sx,sy) là đầu segment trong world, junction tâm có thể không trùng
+            // với endpoint
+            // → Tính khoảng cách từ endpoint (screen) đến tâm junction (screen), rồi trừ đi
+            // radius (screen)
             double offS = computeMarkClipOffset(seg.getStartX(), seg.getStartY(), scale);
-            double offE = computeMarkClipOffset(seg.getEndX(),   seg.getEndY(),   scale);
+            double offE = computeMarkClipOffset(seg.getEndX(), seg.getEndY(), scale);
 
             // Không vẽ nếu 2 đầu clip chồng lên nhau (đoạn quá ngắn)
-            if (offS + offE >= segLen - 1) { gc.restore(); return; }
+            if (offS + offE >= segLen - 1) {
+                gc.restore();
+                return;
+            }
 
             double startOffsetX = sx + Math.cos(ang) * offS;
             double startOffsetY = sy + Math.sin(ang) * offS;
-            double endOffsetX   = ex - Math.cos(ang) * offE;
-            double endOffsetY   = ey - Math.sin(ang) * offE;
+            double endOffsetX = ex - Math.cos(ang) * offE;
+            double endOffsetY = ey - Math.sin(ang) * offE;
 
             drawCenterLine(gc, seg, startOffsetX, startOffsetY, endOffsetX, endOffsetY, ang, scale);
             drawEdgeLines(gc, seg, sx, sy, ex, ey, ang, offS, offE, scale);
             drawLaneDividers(gc, seg, startOffsetX, startOffsetY, endOffsetX, endOffsetY, ang, scale);
+            drawStopLines(gc, seg, sx, sy, ex, ey, ang, offS, offE, scale);
         }
         gc.restore();
     }
@@ -366,10 +386,13 @@ public class InfrastructureRenderer {
      */
     private NetworkRenderData data; // injected từ SimulationView mỗi frame redraw
 
-    public void setRenderData(NetworkRenderData d) { this.data = d; }
+    public void setRenderData(NetworkRenderData d) {
+        this.data = d;
+    }
 
     private double computeMarkClipOffset(double worldX, double worldY, double scale) {
-        if (data == null || data.intersections == null) return 0;
+        if (data == null || data.intersections == null)
+            return 0;
         double best = 0;
         for (IntersectionRenderData inter : data.intersections) {
             double distToCenter = Math.hypot(worldX - inter.centerX, worldY - inter.centerY);
@@ -383,14 +406,18 @@ public class InfrastructureRenderer {
         }
         return Math.max(0, best);
     }
-    // Thay thế hàm drawLaneDividers cũ bằng đoạn này:
-    private void drawLaneDividers(GraphicsContext gc, RoadSegment seg, double sx, double sy, double ex, double ey, double ang, double scale) {
-        List<Lane> lanes = seg.getLanes();
-        if (lanes.size() <= 1) return;
 
-        // ĐỒNG BỘ với hitTestBoundary và drawBoundaryHighlight: dùng (width/3.5)*20.0 không có Math.max clamp
+    // Thay thế hàm drawLaneDividers cũ bằng đoạn này:
+    private void drawLaneDividers(GraphicsContext gc, RoadSegment seg, double sx, double sy, double ex, double ey,
+            double ang, double scale) {
+        List<Lane> lanes = seg.getLanes();
+        if (lanes.size() <= 1)
+            return;
+
+        // ĐỒNG BỘ với hitTestBoundary và drawBoundaryHighlight: dùng (width/3.5)*20.0
+        // không có Math.max clamp
         double totalW = lanes.stream().mapToDouble(l -> (l.getWidth() / 3.5) * LANE_PX).sum() * scale;
-        double perpX = Math.cos(ang + Math.PI/2), perpY = Math.sin(ang + Math.PI/2);
+        double perpX = Math.cos(ang + Math.PI / 2), perpY = Math.sin(ang + Math.PI / 2);
         double currentOff = -totalW / 2.0;
 
         for (int i = 0; i < lanes.size() - 1; i++) {
@@ -398,30 +425,33 @@ public class InfrastructureRenderer {
             currentOff += (lane.getWidth() / 3.5) * LANE_PX * scale;
 
             Lane.MarkingType marking = lane.getRightMarking();
-            if (marking == Lane.MarkingType.NONE) continue;
+            if (marking == Lane.MarkingType.NONE)
+                continue;
 
-            boolean isOppositeDir = lane.getDirection() != lanes.get(i+1).getDirection();
+            boolean isOppositeDir = lane.getDirection() != lanes.get(i + 1).getDirection();
             Color baseColor;
             switch (marking) {
                 case YELLOW_SOLID, YELLOW_DASHED, YELLOW_DOUBLE_SOLID,
-                     YELLOW_LEFT_DASHED_RIGHT_SOLID, YELLOW_LEFT_SOLID_RIGHT_DASHED:
-                    baseColor = COLOR_MARK_YELLOW; break;
+                        YELLOW_LEFT_DASHED_RIGHT_SOLID, YELLOW_LEFT_SOLID_RIGHT_DASHED:
+                    baseColor = COLOR_MARK_YELLOW;
+                    break;
                 default:
-                    baseColor = COLOR_MARK_WHITE; break;
+                    baseColor = COLOR_MARK_WHITE;
+                    break;
             }
 
             gc.setStroke(baseColor);
 
-            double startX = sx + perpX*currentOff;
-            double startY = sy + perpY*currentOff;
-            double endX   = ex + perpX*currentOff;
-            double endY   = ey + perpY*currentOff;
+            double startX = sx + perpX * currentOff;
+            double startY = sy + perpY * currentOff;
+            double endX = ex + perpX * currentOff;
+            double endY = ey + perpY * currentOff;
 
             switch (marking) {
                 case DASHED:
                 case YELLOW_DASHED:
                     gc.setLineWidth(Math.max(0.6, 1.2 * scale));
-                    gc.setLineDashes(10*scale, 12*scale);
+                    gc.setLineDashes(10 * scale, 12 * scale);
                     gc.strokeLine(startX, startY, endX, endY);
                     break;
                 case SOLID:
@@ -434,8 +464,8 @@ public class InfrastructureRenderer {
                 case YELLOW_DOUBLE_SOLID:
                     gc.setLineWidth(Math.max(0.4, 0.8 * scale));
                     gc.setLineDashes(null);
-                    double dOffX = Math.cos(ang + Math.PI/2) * (2 * scale);
-                    double dOffY = Math.sin(ang + Math.PI/2) * (2 * scale);
+                    double dOffX = Math.cos(ang + Math.PI / 2) * (2 * scale);
+                    double dOffY = Math.sin(ang + Math.PI / 2) * (2 * scale);
                     gc.strokeLine(startX - dOffX, startY - dOffY, endX - dOffX, endY - dOffY);
                     gc.strokeLine(startX + dOffX, startY + dOffY, endX + dOffX, endY + dOffY);
                     break;
@@ -443,8 +473,8 @@ public class InfrastructureRenderer {
                 case LEFT_SOLID_RIGHT_DASHED:
                 case YELLOW_LEFT_DASHED_RIGHT_SOLID:
                 case YELLOW_LEFT_SOLID_RIGHT_DASHED:
-                    double offX = Math.cos(ang + Math.PI/2) * (1.5 * scale);
-                    double offY = Math.sin(ang + Math.PI/2) * (1.5 * scale);
+                    double offX = Math.cos(ang + Math.PI / 2) * (1.5 * scale);
+                    double offY = Math.sin(ang + Math.PI / 2) * (1.5 * scale);
                     gc.setLineWidth(Math.max(0.4, 0.8 * scale));
                     boolean isSolidLeft = (marking == Lane.MarkingType.LEFT_SOLID_RIGHT_DASHED
                             || marking == Lane.MarkingType.YELLOW_LEFT_SOLID_RIGHT_DASHED);
@@ -453,33 +483,34 @@ public class InfrastructureRenderer {
                         gc.strokeLine(startX - offX, startY - offY, endX - offX, endY - offY);
                     else
                         gc.strokeLine(startX + offX, startY + offY, endX + offX, endY + offY);
-                    gc.setLineDashes(10*scale, 12*scale);
+                    gc.setLineDashes(10 * scale, 12 * scale);
                     if (isSolidLeft)
                         gc.strokeLine(startX + offX, startY + offY, endX + offX, endY + offY);
                     else
                         gc.strokeLine(startX - offX, startY - offY, endX - offX, endY - offY);
                     break;
-                default: break;
+                default:
+                    break;
             }
         }
         gc.setLineDashes(null);
     }
 
-
-
     // drawLaneDividers handles center line (yellow) via direction-change detection.
     // This method is intentionally empty to avoid double-drawing.
     private void drawCenterLine(GraphicsContext gc, RoadSegment seg,
-                                double startX, double startY, double endX, double endY,
-                                double ang, double scale) {
+            double startX, double startY, double endX, double endY,
+            double ang, double scale) {
         // No-op: yellow center marking is drawn by drawLaneDividers
     }
 
-    private void drawEdgeLines(GraphicsContext gc, RoadSegment seg, double sx, double sy, double ex, double ey, double ang, double offS, double offE, double scale) {
+    private void drawEdgeLines(GraphicsContext gc, RoadSegment seg, double sx, double sy, double ex, double ey,
+            double ang, double offS, double offE, double scale) {
         // Không vẽ viền mép đường — vùng nút giao tròn đã bo góc sạch
     }
 
-    private void drawStopLine(GraphicsContext gc, double px, double py, double roadAngle, RoadSegment seg, double scale) {
+    private void drawStopLine(GraphicsContext gc, double px, double py, double roadAngle, RoadSegment seg,
+            double scale) {
         // Không vẽ vạch dừng xe — giao diện tối giản như ảnh tham chiếu
     }
 
@@ -487,7 +518,7 @@ public class InfrastructureRenderer {
         double[] b = bezier(ramp);
         gc.setStroke(COLOR_MARK_YELLOW);
         gc.setLineWidth(Math.max(0.8, 1.6 * scale));
-        gc.setLineDashes(12*scale, 9*scale);
+        gc.setLineDashes(12 * scale, 9 * scale);
         gc.beginPath();
         gc.moveTo(b[0], b[1]);
         gc.bezierCurveTo(b[4], b[5], b[6], b[7], b[2], b[3]);
@@ -499,21 +530,22 @@ public class InfrastructureRenderer {
     // LABELS
     // ════════════════════════════════════════════════════════════
     public void drawRoadLabel(GraphicsContext gc, RoadSegment seg) {
-        if (seg.isConnector()) return; // arm stubs không cần label
+        if (seg.isConnector())
+            return; // arm stubs không cần label
         double scale = view.getViewScale();
         double labelX, labelY, angleRad;
 
         if (seg instanceof HighwayRampSegment ramp) {
             double[] b = bezier(ramp);
-            labelX   = cubicBezierPoint(0.5, b[0], b[4], b[6], b[2]);
-            labelY   = cubicBezierPoint(0.5, b[1], b[5], b[7], b[3]);
+            labelX = cubicBezierPoint(0.5, b[0], b[4], b[6], b[2]);
+            labelY = cubicBezierPoint(0.5, b[1], b[5], b[7], b[3]);
             angleRad = Math.atan2(cubicBezierTangent(0.5, b[1], b[5], b[7], b[3]),
                     cubicBezierTangent(0.5, b[0], b[4], b[6], b[2]));
         } else {
             double sx = view.toScreenX(seg.getStartX()), sy = view.toScreenY(seg.getStartY());
-            double ex = view.toScreenX(seg.getEndX()),   ey = view.toScreenY(seg.getEndY());
-            labelX   = (sx + ex) / 2.0;
-            labelY   = (sy + ey) / 2.0;
+            double ex = view.toScreenX(seg.getEndX()), ey = view.toScreenY(seg.getEndY());
+            labelX = (sx + ex) / 2.0;
+            labelY = (sy + ey) / 2.0;
             // Tính góc từ screen coords để đảm bảo label luôn song song mặt đường
             angleRad = Math.atan2(ey - sy, ex - sx);
         }
@@ -523,7 +555,7 @@ public class InfrastructureRenderer {
             text = ramp.getRampType() == HighwayRampSegment.RampType.ONRAMP ? "↑ ON RAMP" : "↓ OFF RAMP";
         } else if (seg instanceof HighwaySegment hwy) {
             text = "🛣 CAO TỐC " + seg.getLaneCount() + " làn"
-                    + (hwy.getMinSpeedLimit() > 0 ? "  ≥" + (int)hwy.getMinSpeedLimit() + "km/h" : "")
+                    + (hwy.getMinSpeedLimit() > 0 ? "  ≥" + (int) hwy.getMinSpeedLimit() + "km/h" : "")
                     + (hwy.hasEmergencyLane() ? "  🟠KC" : "");
         } else {
             text = seg.getLaneCount() + " làn";
@@ -547,7 +579,8 @@ public class InfrastructureRenderer {
         double screenY = view.toScreenY(y);
         // Chỉ vẽ dấu chấm nhỏ tại tâm nút giao, không đè lên đường
         double dotR = Math.min(radius * scale, 6 * scale);
-        if (dotR < 2) return;
+        if (dotR < 2)
+            return;
 
         gc.save();
         gc.setFill(Color.web("#5e6060"));
@@ -559,26 +592,31 @@ public class InfrastructureRenderer {
         drawTextPill(gc, text, x, y, angleRad, yOffset, false);
     }
 
-    private void drawTextPill(GraphicsContext gc, String text, double x, double y, double angleRad, double yOffset, boolean isHighway) {
+    private void drawTextPill(GraphicsContext gc, String text, double x, double y, double angleRad, double yOffset,
+            boolean isHighway) {
         double scale = view.getViewScale();
         gc.save();
         gc.translate(x, y);
         double deg = Math.toDegrees(angleRad);
-        if (deg > 90 || deg < -90) { gc.rotate(deg + 180); yOffset = -yOffset; } else gc.rotate(deg);
+        if (deg > 90 || deg < -90) {
+            gc.rotate(deg + 180);
+            yOffset = -yOffset;
+        } else
+            gc.rotate(deg);
         gc.translate(0, yOffset);
         double fs = Math.max(9, 11 * scale);
         gc.setFont(Font.font("Monospace", FontWeight.BOLD, fs));
         gc.setTextAlign(TextAlignment.CENTER);
         gc.setTextBaseline(VPos.CENTER);
-        double pw = text.length() * fs * 0.6 + 10*scale, ph = fs + 6*scale;
+        double pw = text.length() * fs * 0.6 + 10 * scale, ph = fs + 6 * scale;
         // Cao tốc: nền xanh dương đậm; thường: nền tối
         gc.setFill(isHighway ? Color.web("#1a3a6a", 0.92) : COLOR_LABEL_BG);
-        gc.fillRoundRect(-pw/2, -ph/2, pw, ph, 8*scale, 8*scale);
+        gc.fillRoundRect(-pw / 2, -ph / 2, pw, ph, 8 * scale, 8 * scale);
         // Viền xanh cho cao tốc
         if (isHighway) {
             gc.setStroke(Color.web("#4a8fd4", 0.9));
             gc.setLineWidth(1.5);
-            gc.strokeRoundRect(-pw/2, -ph/2, pw, ph, 8*scale, 8*scale);
+            gc.strokeRoundRect(-pw / 2, -ph / 2, pw, ph, 8 * scale, 8 * scale);
         }
         gc.setFill(isHighway ? Color.web("#7dc8ff") : Color.WHITE);
         gc.fillText(text, 0, 0);
@@ -598,13 +636,15 @@ public class InfrastructureRenderer {
      */
     public void drawBoundaryHighlight(GraphicsContext gc, RoadSegment seg, int boundaryIndex) {
         double scale = view.getViewScale();
-        if (scale < 0.18) return;
+        if (scale < 0.18)
+            return;
 
         List<Lane> lanes = seg.getLanes();
-        if (boundaryIndex <= 0 || boundaryIndex >= lanes.size()) return;
+        if (boundaryIndex <= 0 || boundaryIndex >= lanes.size())
+            return;
 
         double sx = view.toScreenX(seg.getStartX()), sy = view.toScreenY(seg.getStartY());
-        double ex = view.toScreenX(seg.getEndX()),   ey = view.toScreenY(seg.getEndY());
+        double ex = view.toScreenX(seg.getEndX()), ey = view.toScreenY(seg.getEndY());
         double ang = Math.atan2(ey - sy, ex - sx);
         double perpX = Math.cos(ang + Math.PI / 2), perpY = Math.sin(ang + Math.PI / 2);
 
@@ -631,11 +671,11 @@ public class InfrastructureRenderer {
     public void drawSelectedHighlight(GraphicsContext gc, RoadSegment seg) {
         double scale = view.getViewScale();
         double sx = view.toScreenX(seg.getStartX()), sy = view.toScreenY(seg.getStartY());
-        double ex = view.toScreenX(seg.getEndX()),   ey = view.toScreenY(seg.getEndY());
+        double ex = view.toScreenX(seg.getEndX()), ey = view.toScreenY(seg.getEndY());
         double w = roadWidth(seg, scale) + 4 * scale;
         double ang = Math.atan2(ey - sy, ex - sx);
-        double perpX = Math.cos(ang + Math.PI/2) * w / 2;
-        double perpY = Math.sin(ang + Math.PI/2) * w / 2;
+        double perpX = Math.cos(ang + Math.PI / 2) * w / 2;
+        double perpY = Math.sin(ang + Math.PI / 2) * w / 2;
         double[] px = { sx + perpX, sx - perpX, ex - perpX, ex + perpX };
         double[] py = { sy + perpY, sy - perpY, ey - perpY, ey + perpY };
         gc.save();
@@ -646,14 +686,15 @@ public class InfrastructureRenderer {
         gc.strokePolygon(px, py, 4);
         gc.restore();
     }
+
     public void drawSegmentHighlight(GraphicsContext gc, RoadSegment seg) {
         double scale = view.getViewScale();
         double sx = view.toScreenX(seg.getStartX()), sy = view.toScreenY(seg.getStartY());
-        double ex = view.toScreenX(seg.getEndX()),   ey = view.toScreenY(seg.getEndY());
+        double ex = view.toScreenX(seg.getEndX()), ey = view.toScreenY(seg.getEndY());
         double w = roadWidth(seg, scale);
         double ang = Math.atan2(ey - sy, ex - sx);
-        double perpX = Math.cos(ang + Math.PI/2) * w / 2;
-        double perpY = Math.sin(ang + Math.PI/2) * w / 2;
+        double perpX = Math.cos(ang + Math.PI / 2) * w / 2;
+        double perpY = Math.sin(ang + Math.PI / 2) * w / 2;
         double[] px = { sx + perpX, sx - perpX, ex - perpX, ex + perpX };
         double[] py = { sy + perpY, sy - perpY, ey - perpY, ey + perpY };
         gc.save();
@@ -681,6 +722,56 @@ public class InfrastructureRenderer {
         gc.restore();
     }
 
+    private void drawStopLines(GraphicsContext gc, RoadSegment seg, double sx, double sy, double ex, double ey,
+            double ang, double offS, double offE, double scale) {
+        // Nếu đoạn đường không kết nối với Intersection ở cả hai đầu thì bỏ qua (không
+        // tạo vạch dừng)
+        if (offS <= 0 && offE <= 0)
+            return;
+        // Chiều rộng tổng cộng của đoạn đường tại điểm đang xét
+        double totalW = roadWidth(seg, scale);
+
+        // Tính vector pháp tuyến (vuông góc) so với góc của đoạn đường
+        double perpX = Math.cos(ang + Math.PI / 2) * (totalW / 2.0);
+        double perpY = Math.sin(ang + Math.PI / 2) * (totalW / 2.0);
+        // Cấu hình bút vẽ: vạch dừng là nét liền màu trắng, vuông góc, nét thường dày
+        // hơn vạch phân làn
+        gc.setStroke(COLOR_MARK_WHITE);
+        gc.setLineWidth(Math.max(2.0, 4.0 * scale));
+        gc.setLineDashes(null); // Đảm bảo là nét liền
+        gc.setLineCap(StrokeLineCap.BUTT);
+        // Xử lý nếu đầu Bắt Đầu (Start) của đoạn đường có giao lộ
+        if (offS > 0) {
+            // Tọa độ đã lùi lại một chút so với tâm Intersection
+            double px = sx + Math.cos(ang) * offS;
+            double py = sy + Math.sin(ang) * offS;
+
+            Position p1 = new Position(px - perpX, py - perpY);
+            Position p2 = new Position(px + perpX, py + perpY);
+
+            // Tạo đối tượng RoadMarking (type = STOP_LINE theo Factory method)
+            RoadMarking stopLineStart = RoadMarking.stopLine(p1, p2);
+
+            // Render vạch dừng lên màn hình
+            gc.strokeLine(p1.getX(), p1.getY(), p2.getX(), p2.getY());
+        }
+        // Xử lý nếu đầu Kết Thúc (End) của đoạn đường có giao lộ
+        if (offE > 0) {
+            // Tọa độ lùi lại từ điểm cuối
+            double px = ex - Math.cos(ang) * offE;
+            double py = ey - Math.sin(ang) * offE;
+
+            Position p1 = new Position(px - perpX, py - perpY);
+            Position p2 = new Position(px + perpX, py + perpY);
+
+            // Tạo đối tượng RoadMarking
+            RoadMarking stopLineEnd = RoadMarking.stopLine(p1, p2);
+
+            // Render vạch dừng lên màn hình
+            gc.strokeLine(p1.getX(), p1.getY(), p2.getX(), p2.getY());
+        }
+    }
+
     // ════════════════════════════════════════════════════════════
     // HELPERS
     // ════════════════════════════════════════════════════════════
@@ -695,28 +786,34 @@ public class InfrastructureRenderer {
 
     public double[] bezier(HighwayRampSegment ramp) {
         double sx = view.toScreenX(ramp.getStartX()), sy = view.toScreenY(ramp.getStartY());
-        double ex = view.toScreenX(ramp.getEndX()),   ey = view.toScreenY(ramp.getEndY());
-        double pull = Math.hypot(ex-sx, ey-sy) * 0.44;
+        double ex = view.toScreenX(ramp.getEndX()), ey = view.toScreenY(ramp.getEndY());
+        double pull = Math.hypot(ex - sx, ey - sy) * 0.44;
         HighwaySegment hwy = ramp.getConnectedHighway();
-        double hdx = Math.cos(hwy != null ? hwy.getAngle() : ramp.getAngle()), hdy = Math.sin(hwy != null ? hwy.getAngle() : ramp.getAngle());
-        return new double[]{sx, sy, ex, ey, sx + Math.cos(ramp.getAngle())*pull, sy + Math.sin(ramp.getAngle())*pull, ex - hdx*pull, ey - hdy*pull};
+        double hdx = Math.cos(hwy != null ? hwy.getAngle() : ramp.getAngle()),
+                hdy = Math.sin(hwy != null ? hwy.getAngle() : ramp.getAngle());
+        return new double[] { sx, sy, ex, ey, sx + Math.cos(ramp.getAngle()) * pull,
+                sy + Math.sin(ramp.getAngle()) * pull, ex - hdx * pull, ey - hdy * pull };
     }
 
     private double cubicBezierPoint(double t, double p0, double p1, double p2, double p3) {
-        double u = 1-t; return u*u*u*p0 + 3*u*u*t*p1 + 3*u*t*t*p2 + t*t*t*p3;
+        double u = 1 - t;
+        return u * u * u * p0 + 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t * p3;
     }
 
     private double cubicBezierTangent(double t, double p0, double p1, double p2, double p3) {
-        double u = 1-t; return 3*(u*u*(p1-p0) + 2*u*t*(p2-p1) + t*t*(p3-p2));
+        double u = 1 - t;
+        return 3 * (u * u * (p1 - p0) + 2 * u * t * (p2 - p1) + t * t * (p3 - p2));
     }
 
     private Lane.MarkingType getCenterMarkingType(RoadSegment seg) {
         List<Lane> lanes = seg.getLanes();
-        for (Lane l : lanes) if (l.getDirection() == Lane.Direction.FORWARD) return l.getRightMarking();
+        for (Lane l : lanes)
+            if (l.getDirection() == Lane.Direction.FORWARD)
+                return l.getRightMarking();
         return Lane.MarkingType.DASHED;
     }
 
     public boolean samePoint(double x1, double y1, double x2, double y2) {
-        return Math.abs(x1-x2) < 0.5 && Math.abs(y1-y2) < 0.5;
+        return Math.abs(x1 - x2) < 0.5 && Math.abs(y1 - y2) < 0.5;
     }
 }
