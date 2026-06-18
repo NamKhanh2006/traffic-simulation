@@ -23,7 +23,7 @@ import java.util.Stack;
 
 public class SimulationView extends Canvas {
 
-    public enum InteractionType { PAN, DRAW_ROAD, EDIT_MARKINGS, PLACE_INTERSECTION, DELETE }
+    public enum InteractionType { PAN, DRAW_ROAD, EDIT_MARKINGS, PLACE_INTERSECTION, DELETE, DELETE_LIGHT }
 
     /**
      * Loại giao lộ sẽ được đặt khi người dùng click trong mode PLACE_INTERSECTION.
@@ -145,6 +145,9 @@ public class SimulationView extends Canvas {
     private RoadSegment  hoveredSegment      = null;
     private Intersection hoveredIntersection = null;
 
+    // ── Hover state (DELETE_LIGHT mode) ──────────────────────────────
+    private com.myteam.traffic.light.SegmentLight hoveredLight = null;
+
     /** Gói dữ liệu mô tả ranh giới đang được hover. */
     private static class HoverResult {
         final RoadSegment seg;
@@ -224,6 +227,7 @@ public class SimulationView extends Canvas {
 
     // ── Setters ──────────────────────────────────────────────
     public void setNetwork(RoadNetwork network)       { this.network = network; updateRenderData(); }
+    public RoadNetwork getNetwork()                   { return network; }
     public void setCurrentLaneConfig(int lanes)       { this.currentLaneConfig = lanes; }
     public void setAutoIntersect(boolean auto)        { this.autoIntersect = auto; }
     public void setShowGrid(boolean show)             { this.showGrid = show; redraw(); }
@@ -270,13 +274,14 @@ public class SimulationView extends Canvas {
         this.hoveredBoundary    = null;
         this.hoveredSegment     = null;
         this.hoveredIntersection = null;
+        this.hoveredLight       = null;
         // Đặt vị trí preview về tâm canvas nếu chuột chưa vào canvas
         if (lastMouseX <= 0) lastMouseX = getWidth() / 2;
         if (lastMouseY <= 0) lastMouseY = getHeight() / 2;
         redraw();
     }
 
-    private void updateRenderData() { this.data = (network != null) ? network.getRenderData() : null; redraw(); }
+    public void updateRenderData() { this.data = (network != null) ? network.getRenderData() : null; redraw(); }
     public void resetView()  { scale = 1.0; translateX = getWidth()/2; translateY = getHeight()/2; redraw(); }
     public void zoomIn()     { scale *= 1.2; redraw(); }
     public void zoomOut()    { scale /= 1.2; redraw(); }
@@ -336,6 +341,42 @@ public class SimulationView extends Canvas {
             if (d <= halfWidth && d < bestDist) { bestDist = d; result = seg; }
         }
         return result;
+    }
+
+    private double[] getLightPosition(com.myteam.traffic.light.SegmentLight sl) {
+        double ang = sl.getAngle();
+        double baseWx = sl.getWorldX();
+        double baseWy = sl.getWorldY();
+
+        double interRadius = 30.0;
+        if (data != null && data.intersections != null) {
+            for (com.myteam.traffic.model.infrastructure.IntersectionRenderData ird : data.intersections) {
+                if (Math.hypot(baseWx - ird.centerX, baseWy - ird.centerY) < 5.0) {
+                    interRadius = ird.radius;
+                    break;
+                }
+            }
+        }
+        double dirSign = sl.isAtEnd() ? -1.0 : 1.0;
+        double stoplineWx = baseWx + dirSign * interRadius * Math.cos(ang);
+        double stoplineWy = baseWy + dirSign * interRadius * Math.sin(ang);
+
+        double sideAng = sl.isAtEnd() ? (ang - Math.PI / 2) : (ang + Math.PI / 2);
+        double sideOffset = sl.getSegment().getLaneCount() * 20.0 / 2.0 + 8.0;
+        double wx = stoplineWx + Math.cos(sideAng) * sideOffset;
+        double wy = stoplineWy + Math.sin(sideAng) * sideOffset;
+        return new double[]{wx, wy};
+    }
+
+    private com.myteam.traffic.light.SegmentLight hitTestLight(double worldX, double worldY) {
+        if (controller == null) return null;
+        for (com.myteam.traffic.light.SegmentLight sl : controller.getAllSegmentLights()) {
+            double[] pos = getLightPosition(sl);
+            if (Math.hypot(worldX - pos[0], worldY - pos[1]) < 18.0) {
+                return sl;
+            }
+        }
+        return null;
     }
 
     /**
@@ -495,12 +536,25 @@ public class SimulationView extends Canvas {
                 double stoplineWx = baseWx + dirSign * interRadius * Math.cos(ang);
                 double stoplineWy = baseWy + dirSign * interRadius * Math.sin(ang);
 
-                // Offset sang trái đường (giao thông đi bên trái)
-                double sideAng = sl.isAtEnd() ? (ang - Math.PI / 2) : (ang + Math.PI / 2);
-                double sideOffset = sl.getSegment().getLaneCount() * 20.0 / 2.0 + 8.0;
-                double wx = stoplineWx + Math.cos(sideAng) * sideOffset;
-                double wy = stoplineWy + Math.sin(sideAng) * sideOffset;
+                double[] lPos = getLightPosition(sl);
+                double wx = lPos[0];
+                double wy = lPos[1];
                 lightRenderer.draw(gc, sl.getLight(), wx, wy);
+                
+                // Vẽ hiệu ứng viền cho đèn đang được hover để xoá
+                if (currentMode == InteractionType.DELETE_LIGHT && sl == hoveredLight) {
+                    double lScale = scale * 0.4;
+                    double drawWx = toScreenX(wx);
+                    double drawWy = toScreenY(wy);
+                    gc.save();
+                    gc.translate(drawWx, drawWy);
+                    gc.setStroke(Color.web("#ff3333", 0.9));
+                    gc.setLineWidth(Math.max(2.0, 3.0 * scale));
+                    gc.strokeRoundRect(-25 * lScale, -45 * lScale, 50 * lScale, 90 * lScale, 10 * scale, 10 * scale);
+                    gc.setFill(Color.web("#ff3333", 0.45));
+                    gc.fillRoundRect(-25 * lScale, -45 * lScale, 50 * lScale, 90 * lScale, 10 * scale, 10 * scale);
+                    gc.restore();
+                }
             }
         }
 
@@ -902,7 +956,7 @@ public class SimulationView extends Canvas {
         for (javafx.scene.control.Label l : new javafx.scene.control.Label[]{lblGreen, lblRed, lblYellow})
             l.setStyle("-fx-text-fill:#c8d0e8; -fx-font-size:12px;");
 
-        int initGreen  = existingLight != null ? existingLight.getLight().getSecondsRemaining() : 30;
+        int initGreen  = 30;
         int initRed    = 30;
         int initYellow = 5;
         // Lấy thời gian hiện tại nếu có đèn sẵn
@@ -914,9 +968,9 @@ public class SimulationView extends Canvas {
             initYellow = tl.getDurationForState(com.myteam.traffic.light.TrafficLightState.YELLOW);
         }
 
-        javafx.scene.control.Spinner<Integer> spinGreen  = new javafx.scene.control.Spinner<>(1, 120, initGreen);
-        javafx.scene.control.Spinner<Integer> spinRed    = new javafx.scene.control.Spinner<>(1, 120, initRed);
-        javafx.scene.control.Spinner<Integer> spinYellow = new javafx.scene.control.Spinner<>(1, 30,  initYellow);
+        javafx.scene.control.Spinner<Integer> spinGreen  = new javafx.scene.control.Spinner<>(1, 999, Math.min(999, Math.max(1, initGreen)));
+        javafx.scene.control.Spinner<Integer> spinRed    = new javafx.scene.control.Spinner<>(1, 999, Math.min(999, Math.max(1, initRed)));
+        javafx.scene.control.Spinner<Integer> spinYellow = new javafx.scene.control.Spinner<>(1, 999, Math.min(999, Math.max(1, initYellow)));
         for (javafx.scene.control.Spinner<Integer> s : new javafx.scene.control.Spinner[]{spinGreen, spinRed, spinYellow}) {
             s.setEditable(true);
             s.setPrefWidth(90);
@@ -939,7 +993,9 @@ public class SimulationView extends Canvas {
 
         javafx.scene.control.Label lblInitSec = new javafx.scene.control.Label("Số giây hiện tại:");
         lblInitSec.setStyle("-fx-text-fill:#c8d0e8; -fx-font-size:12px;");
-        javafx.scene.control.Spinner<Integer> spinInitSec = new javafx.scene.control.Spinner<>(1, 120, existingLight != null ? (int)Math.ceil(existingLight.getLight().getSecondsRemaining()) : 15);
+        int initSecVal = existingLight != null ? Math.max(1, (int)Math.ceil(existingLight.getLight().getSecondsRemaining())) : 15;
+        initSecVal = Math.min(999, initSecVal);
+        javafx.scene.control.Spinner<Integer> spinInitSec = new javafx.scene.control.Spinner<>(1, 999, initSecVal);
         spinInitSec.setEditable(true);
         spinInitSec.setPrefWidth(90);
         spinInitSec.setStyle("-fx-background-color:#2a3550; -fx-border-color:#3a4560;");
@@ -953,8 +1009,8 @@ public class SimulationView extends Canvas {
         // Chọn vị trí đèn: đầu hay cuối đường
         javafx.scene.control.Label lblPos = new javafx.scene.control.Label("Vị trí đèn:");
         lblPos.setStyle("-fx-text-fill:#c8d0e8; -fx-font-size:12px;");
-        javafx.scene.control.ToggleButton btnEnd   = new javafx.scene.control.ToggleButton("Cuối đường →");
-        javafx.scene.control.ToggleButton btnStart = new javafx.scene.control.ToggleButton("← Đầu đường");
+        javafx.scene.control.ToggleButton btnEnd   = new javafx.scene.control.ToggleButton("Ngã tư Cuối đường →");
+        javafx.scene.control.ToggleButton btnStart = new javafx.scene.control.ToggleButton("← Ngã tư Đầu đường");
         javafx.scene.control.ToggleGroup posGroup  = new javafx.scene.control.ToggleGroup();
         btnEnd.setToggleGroup(posGroup);
         btnStart.setToggleGroup(posGroup);
@@ -969,8 +1025,22 @@ public class SimulationView extends Canvas {
                     : "-fx-background-color:#2a3550; -fx-text-fill:#c8d0e8;"))
             );
         }
+        
+        Intersection interStart = network.findNearestIntersection(seg.getStartX(), seg.getStartY(), 5.0);
+        Intersection interEnd = network.findNearestIntersection(seg.getEndX(), seg.getEndY(), 5.0);
+        
         boolean existingAtEnd = existingLight == null || existingLight.isAtEnd();
-        if (existingAtEnd) btnEnd.setSelected(true); else btnStart.setSelected(true);
+        
+        if (interStart == null && interEnd != null) {
+            btnEnd.setSelected(true);
+            btnStart.setDisable(true);
+        } else if (interStart != null && interEnd == null) {
+            btnStart.setSelected(true);
+            btnEnd.setDisable(true);
+        } else {
+            if (existingAtEnd) btnEnd.setSelected(true); else btnStart.setSelected(true);
+        }
+        
         javafx.scene.layout.HBox posRow = new javafx.scene.layout.HBox(8, lblPos, btnEnd, btnStart);
         posRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
         root.getChildren().add(posRow);
@@ -1388,6 +1458,13 @@ public class SimulationView extends Canvas {
                 RoadSegment popupSeg = hitTestSegmentForPopup(wx, wy);
                 if (popupSeg != null) showRoadTip(popupSeg, e.getScreenX(), e.getScreenY());
                 else if (!tipPinned) hideRoadTip();
+            } else if (currentMode == InteractionType.DELETE_LIGHT) {
+                com.myteam.traffic.light.SegmentLight newHoveredLight = hitTestLight(wx, wy);
+                if (newHoveredLight != hoveredLight) {
+                    hoveredLight = newHoveredLight;
+                    redraw();
+                }
+                if (!tipPinned) hideRoadTip();
             } else {
                 // PAN / DRAW mode: popup đi theo chuột khi hover trên đường
                 RoadSegment hovered = hitTestSegmentForPopup(wx, wy);
@@ -1475,13 +1552,42 @@ public class SimulationView extends Canvas {
 
             } else if (currentMode == InteractionType.DELETE) {
                 if (hoveredSegment != null) {
+                    RoadSegment removed = hoveredSegment;
                     saveSnapshot();
-                    network.removeSegment(hoveredSegment);
+                    if (controller != null) {
+                        controller.removeSegmentLight(removed);
+                        controller.removeVehiclesOnSegment(removed);
+                    }
+                    if (selectedSegment == removed) selectedSegment = null;
+                    if (tipSegment == removed) hideRoadTip();
+                    network.removeSegment(removed);
                     hoveredSegment = null; updateRenderData();
                 } else if (hoveredIntersection != null) {
+                    Intersection removed = hoveredIntersection;
                     saveSnapshot();
-                    network.removeIntersection(hoveredIntersection);
+                    if (controller != null) {
+                        controller.removeVehiclesInIntersection(removed);
+                    }
+                    network.removeIntersection(removed);
                     hoveredIntersection = null; updateRenderData();
+                }
+
+            } else if (currentMode == InteractionType.DELETE_LIGHT) {
+                if (hoveredLight != null && controller != null) {
+                    boolean mainAtEnd = hoveredLight.isAtEnd();
+                    RoadSegment seg = hoveredLight.getSegment();
+                    
+                    List<com.myteam.traffic.light.SegmentLight> backupLights = new java.util.ArrayList<>(controller.getAllSegmentLights());
+                    controller.removeSegmentLight(seg, mainAtEnd);
+                    
+                    undoStack.push(() -> {
+                        controller.removeSegmentLight(seg, mainAtEnd);
+                        for (com.myteam.traffic.light.SegmentLight sl : backupLights) {
+                            controller.addSegmentLight(sl);
+                        }
+                    });
+                    hoveredLight = null;
+                    redraw();
                 }
 
             } else if (currentMode == InteractionType.PLACE_INTERSECTION) {
@@ -1909,7 +2015,7 @@ public class SimulationView extends Canvas {
             // Ngã 6: đều 60°
             double angleDeg;
             if (armCount == 3) {
-                double[] angles3 = {-90, 150, 30}; // Bắc, Tây-Nam, Đông-Nam (chữ Y)
+                double[] angles3 = {-90, 180, 0}; // Bắc, Tây, Đông (chữ T)
                 angleDeg = angles3[i];
             } else if (armCount == 5) {
                 double[] angles5 = {-90, -162, -18, 126, 54}; // Bắc + 4 nhánh xòe ra

@@ -86,6 +86,22 @@ public class TrafficController {
             vehicles.remove(v);
     }
 
+    public void removeVehiclesOnSegment(RoadSegment segment) {
+        if (segment == null)
+            return;
+        vehicles.removeIf(v ->
+                v.getCurrentSegment() == segment ||
+                pathUsesSegment(v.getActivePath(), segment));
+    }
+
+    public void removeVehiclesInIntersection(Intersection intersection) {
+        if (intersection == null)
+            return;
+        vehicles.removeIf(v ->
+                v.getCurrentIntersection() == intersection ||
+                (v.getActivePath() != null && v.getActivePath().getIntersection() == intersection));
+    }
+
     public void clearVehicles() {
         vehicles.clear();
         explosions.clear();
@@ -141,6 +157,8 @@ public class TrafficController {
     }
 
     public void tick(double deltaTime) {
+        cleanupInvalidNetworkReferences();
+
         // Cập nhật dying timer và xóa xe đã mờ hết
         vehicles.removeIf(v -> {
             if (v.isDying()) {
@@ -208,6 +226,36 @@ public class TrafficController {
             tryEnterIntersection(v);
             tryExitIntersection(v);
         }
+    }
+
+    private void cleanupInvalidNetworkReferences() {
+        segmentLights.removeIf(sl -> !network.getSegments().contains(sl.getSegment()));
+        vehicles.removeIf(v -> {
+            if (v.getTravelMode() == TravelMode.ON_SEGMENT) {
+                RoadSegment seg = v.getCurrentSegment();
+                return seg == null || !network.getSegments().contains(seg) || v.getCurrentLane() == null;
+            }
+
+            if (v.getTravelMode() == TravelMode.ON_INTERSECTION_PATH) {
+                IntersectionPath path = v.getActivePath();
+                Intersection inter = v.getCurrentIntersection();
+                if (path == null || inter == null || !network.getIntersections().contains(inter))
+                    return true;
+                if (path.getEntry() == null || path.getExit() == null)
+                    return true;
+                return !network.getSegments().contains(path.getEntry().getSegment())
+                        || !network.getSegments().contains(path.getExit().getSegment());
+            }
+
+            return false;
+        });
+    }
+
+    private boolean pathUsesSegment(IntersectionPath path, RoadSegment segment) {
+        if (path == null || segment == null)
+            return false;
+        return (path.getEntry() != null && path.getEntry().getSegment() == segment)
+                || (path.getExit() != null && path.getExit().getSegment() == segment);
     }
 
     /**
@@ -552,6 +600,7 @@ public class TrafficController {
         // NẾU SẮP VÀO GIAO LỘ: Ép dừng tại mép giao lộ nếu không thể an toàn tiến vào
         if (upcoming != null) {
             double edgeMargin = interRadius / seg.getLength();
+            edgeMargin = Math.min(0.45, edgeMargin);
             boolean isForward = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD);
 
             // Ép dừng tại mép giao lộ nếu không thể an toàn tiến vào
@@ -581,6 +630,7 @@ public class TrafficController {
                 // Xe sẽ dừng ngay sát mép ngoài vòng tròn giao lộ
                 // (upcoming và interRadius đã được lấy ở trên)
                 double stopMargin = (interRadius + 5.0) / seg.getLength();
+                stopMargin = Math.min(0.48, stopMargin);
 
                 if (isForward) {
                     double stopProgress = 1.0 - stopMargin;
@@ -675,10 +725,11 @@ public class TrafficController {
             double otherProgress = other.getPathProgress();
             double gap = otherProgress - myProgress; // dương = ở phía trước
 
-            if (gap > 0 && gap < minGap) {
-                // Dùng khoảng cách thực tế để đảm bảo
+            if (gap > 0) {
                 double dist = v.getPosition().distanceTo(other.getPosition());
-                minGap = dist;
+                if (dist < minGap) {
+                    minGap = dist;
+                }
             }
         }
         return minGap;
@@ -741,10 +792,14 @@ public class TrafficController {
                     other.getCurrentLane() == v.getCurrentLane()) {
                 double dist = v.getPosition().distanceTo(other.getPosition());
                 if (dist < 15.0) {
-                    // Dịch lùi lại 10 mét
                     double offset = 10.0 / v.getCurrentSegment().getLength();
-                    double newProgress = v.getSegmentProgress() - offset;
-                    v.setSegmentProgress(Math.max(0, newProgress));
+                    double newProgress;
+                    if (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD) {
+                        newProgress = v.getSegmentProgress() - offset;
+                    } else {
+                        newProgress = v.getSegmentProgress() + offset;
+                    }
+                    v.setSegmentProgress(Math.max(0, Math.min(1.0, newProgress)));
                     v.syncPositionFromSegment();
                     break;
                 }
