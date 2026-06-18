@@ -27,14 +27,14 @@ public class SimulationApp extends Application {
 
     // ── Cấu hình làn mặc định ────────────────────────────────
     private SimulationView view; // field để dialog methods dùng được
-    private double currentLaneWidth  = 3.5;
-    private boolean onewayMode       = false;
-    private Set<Lane.VehicleCategory> allowedVehicles =
-            EnumSet.of(Lane.VehicleCategory.CAR, Lane.VehicleCategory.MOTORBIKE,
-                    Lane.VehicleCategory.BUS);
-    private Set<Lane.Movement> currentMovements =
-            EnumSet.of(Lane.Movement.STRAIGHT, Lane.Movement.LEFT, Lane.Movement.RIGHT);
-    private double roundaboutRadius  = 60.0;
+    private double currentLaneWidth = 3.5;
+    private boolean onewayMode = false;
+    private Set<Lane.VehicleCategory> allowedVehicles = EnumSet.of(Lane.VehicleCategory.CAR,
+            Lane.VehicleCategory.MOTORBIKE,
+            Lane.VehicleCategory.BUS);
+    private Set<Lane.Movement> currentMovements = EnumSet.of(Lane.Movement.STRAIGHT, Lane.Movement.LEFT,
+            Lane.Movement.RIGHT);
+    private double roundaboutRadius = 60.0;
 
     // ── Lane factories ────────────────────────────────────────
     private Lane fwdLane(int idx) {
@@ -46,32 +46,40 @@ public class SimulationApp extends Application {
     private Lane bwdLane(int idx) {
         // Làn ngược chiều: hướng rẽ là đối xứng (STRAIGHT + đảo LEFT/RIGHT)
         Set<Lane.Movement> bwdMov = EnumSet.noneOf(Lane.Movement.class);
-        if (currentMovements.contains(Lane.Movement.STRAIGHT)) bwdMov.add(Lane.Movement.STRAIGHT);
-        if (currentMovements.contains(Lane.Movement.LEFT))     bwdMov.add(Lane.Movement.RIGHT);
-        if (currentMovements.contains(Lane.Movement.RIGHT))    bwdMov.add(Lane.Movement.LEFT);
-        if (currentMovements.contains(Lane.Movement.U_TURN))   bwdMov.add(Lane.Movement.U_TURN);
-        if (bwdMov.isEmpty()) bwdMov.add(Lane.Movement.STRAIGHT);
+        if (currentMovements.contains(Lane.Movement.STRAIGHT))
+            bwdMov.add(Lane.Movement.STRAIGHT);
+        if (currentMovements.contains(Lane.Movement.LEFT))
+            bwdMov.add(Lane.Movement.RIGHT);
+        if (currentMovements.contains(Lane.Movement.RIGHT))
+            bwdMov.add(Lane.Movement.LEFT);
+        if (currentMovements.contains(Lane.Movement.U_TURN))
+            bwdMov.add(Lane.Movement.U_TURN);
+        if (bwdMov.isEmpty())
+            bwdMov.add(Lane.Movement.STRAIGHT);
         return new Lane(idx, Lane.Direction.BACKWARD, currentLaneWidth,
                 allowedVehicles, bwdMov,
                 Lane.MarkingType.DASHED, Lane.MarkingType.DASHED);
     }
 
     /**
-     * Static fallback — dùng khi laneFactory chưa được set (chiều rộng 3.5m mặc định).
+     * Static fallback — dùng khi laneFactory chưa được set (chiều rộng 3.5m mặc
+     * định).
      */
     public static List<Lane> createLanes(int n) {
         List<Lane> l = new ArrayList<>();
         int fwd = (n + 1) / 2, bwd = n / 2;
-        for (int i = 0; i < fwd; i++) l.add(new Lane(i, Lane.Direction.FORWARD, 3.5,
-                EnumSet.of(Lane.VehicleCategory.CAR, Lane.VehicleCategory.MOTORBIKE),
-                EnumSet.of(Lane.Movement.STRAIGHT), Lane.MarkingType.DASHED, Lane.MarkingType.DASHED));
-        for (int i = 0; i < bwd; i++) l.add(new Lane(fwd + i, Lane.Direction.BACKWARD, 3.5,
-                EnumSet.of(Lane.VehicleCategory.CAR, Lane.VehicleCategory.BUS),
-                EnumSet.of(Lane.Movement.STRAIGHT), Lane.MarkingType.DASHED, Lane.MarkingType.DASHED));
+        for (int i = 0; i < fwd; i++)
+            l.add(new Lane(i, Lane.Direction.FORWARD, 3.5,
+                    EnumSet.of(Lane.VehicleCategory.CAR, Lane.VehicleCategory.MOTORBIKE),
+                    EnumSet.of(Lane.Movement.STRAIGHT), Lane.MarkingType.DASHED, Lane.MarkingType.DASHED));
+        for (int i = 0; i < bwd; i++)
+            l.add(new Lane(fwd + i, Lane.Direction.BACKWARD, 3.5,
+                    EnumSet.of(Lane.VehicleCategory.CAR, Lane.VehicleCategory.BUS),
+                    EnumSet.of(Lane.Movement.STRAIGHT), Lane.MarkingType.DASHED, Lane.MarkingType.DASHED));
         // Vạch tim đường → YELLOW_DASHED
         if (fwd > 0 && bwd > 0) {
             l.set(fwd - 1, l.get(fwd - 1).withRightMarking(Lane.MarkingType.YELLOW_DASHED));
-            l.set(fwd,     l.get(fwd)    .withLeftMarking (Lane.MarkingType.YELLOW_DASHED));
+            l.set(fwd, l.get(fwd).withLeftMarking(Lane.MarkingType.YELLOW_DASHED));
         }
         return l;
     }
@@ -83,19 +91,22 @@ public class SimulationApp extends Application {
     public List<Lane> createLanesInstance(int totalLanes) {
         List<Lane> lanes = new ArrayList<>();
         if (totalLanes == 1 || onewayMode) {
-            for (int i = 0; i < totalLanes; i++) lanes.add(fwdLane(i));
+            for (int i = 0; i < totalLanes; i++)
+                lanes.add(fwdLane(i));
             return lanes;
         }
         int fwd = (totalLanes + 1) / 2;
         int bwd = totalLanes / 2;
-        for (int i = 0; i < fwd; i++) lanes.add(fwdLane(i));
-        for (int i = 0; i < bwd; i++) lanes.add(bwdLane(fwd + i));
+        for (int i = 0; i < fwd; i++)
+            lanes.add(fwdLane(i));
+        for (int i = 0; i < bwd; i++)
+            lanes.add(bwdLane(fwd + i));
         // Vạch tim đường (giữa làn FORWARD cuối và BACKWARD đầu) → YELLOW_DASHED
         if (fwd > 0 && bwd > 0) {
-            Lane last  = lanes.get(fwd - 1);
+            Lane last = lanes.get(fwd - 1);
             Lane first = lanes.get(fwd);
-            lanes.set(fwd - 1, last .withRightMarking(Lane.MarkingType.YELLOW_DASHED));
-            lanes.set(fwd,     first.withLeftMarking (Lane.MarkingType.YELLOW_DASHED));
+            lanes.set(fwd - 1, last.withRightMarking(Lane.MarkingType.YELLOW_DASHED));
+            lanes.set(fwd, first.withLeftMarking(Lane.MarkingType.YELLOW_DASHED));
         }
         return lanes;
     }
@@ -109,30 +120,20 @@ public class SimulationApp extends Application {
         view.setNetwork(network);
         view.setLaneFactory(this::createLanesInstance);
 
-        com.myteam.traffic.controller.TrafficController trafficController =
-                new com.myteam.traffic.controller.TrafficController(network);
-        trafficController.addLight(new com.myteam.traffic.light.NoCountdownLight(30,30,30));
-        com.myteam.traffic.controller.VehicleSpawner spawner =
-                new com.myteam.traffic.controller.VehicleSpawner(trafficController, network);
+        com.myteam.traffic.controller.TrafficController trafficController = new com.myteam.traffic.controller.TrafficController(
+                network);
+        trafficController.addLight(new com.myteam.traffic.light.NoCountdownLight(30, 30, 30));
+        com.myteam.traffic.controller.VehicleSpawner spawner = new com.myteam.traffic.controller.VehicleSpawner(
+                trafficController, network);
         view.setController(trafficController);
         view.setSpawner(spawner);
 
         // ════════ TOP BAR ════════════════════════════════════════════════════
-        ToggleButton btnModePan    = modeBtn("✋", "Di chuyển",  "Kéo và xoay bản đồ");
-        ToggleButton btnModeDraw   = modeBtn("🛣️", "Vẽ đường",   "Vẽ đoạn đường mới");
-        ToggleButton btnModeEdit   = modeBtn("✏️", "Sửa vạch",   "Hover vạch kẻ → menu chọn loại");
-        ToggleButton btnModeDelete = modeBtn("🗑️", "Xóa",        "Hover vào đường/nút giao → click để xóa");
+        ToggleButton btnModePan = modeBtn("✋", "Di chuyển", "Kéo và xoay bản đồ");
+        ToggleButton btnModeDraw = modeBtn("🛣️", "Vẽ đường", "Vẽ đoạn đường mới");
+        ToggleButton btnModeEdit = modeBtn("✏️", "Sửa vạch", "Hover vạch kẻ → menu chọn loại");
         ToggleButton btnModeDelLight = modeBtn("💡", "Xóa đèn", "Hover vào đèn sáng lên → click để xóa");
-        ToggleButton btnModeSim    = modeBtn("🚗", "Mô phỏng",   "Chạy mô phỏng & spawn xe theo tỷ lệ");
-
-        // Nút xóa màu đỏ khi active
-        btnModeDelete.selectedProperty().addListener((o, was, is) -> {
-            String base = "-fx-font-size:13px; -fx-font-weight:bold; -fx-cursor:hand; " +
-                    "-fx-pref-height:32px; -fx-padding:3 14 3 14; -fx-background-radius:6;";
-            btnModeDelete.setStyle(base + (is
-                    ? "-fx-background-color:#c0392b; -fx-text-fill:white;"
-                    : "-fx-background-color:#2e3d52; -fx-text-fill:#c8d0e8;"));
-        });
+        ToggleButton btnModeSim = modeBtn("🚗", "Mô phỏng", "Chạy mô phỏng & spawn xe theo tỷ lệ");
         btnModeDelLight.selectedProperty().addListener((o, was, is) -> {
             String base = "-fx-font-size:13px; -fx-font-weight:bold; -fx-cursor:hand; " +
                     "-fx-pref-height:32px; -fx-padding:3 14 3 14; -fx-background-radius:6;";
@@ -142,26 +143,23 @@ public class SimulationApp extends Application {
         });
 
         ToggleGroup modeGroup = new ToggleGroup();
-        for (ToggleButton b : new ToggleButton[]{btnModePan, btnModeDraw, btnModeEdit, btnModeDelete, btnModeDelLight, btnModeSim})
+        for (ToggleButton b : new ToggleButton[] { btnModePan, btnModeDraw, btnModeEdit, btnModeDelLight, btnModeSim })
             b.setToggleGroup(modeGroup);
         btnModePan.setSelected(true);
 
-        HBox modeBox = new HBox(4, btnModePan, btnModeDraw, btnModeEdit, btnModeDelete, btnModeDelLight, btnModeSim);
+        HBox modeBox = new HBox(4, btnModePan, btnModeDraw, btnModeEdit, btnModeDelLight, btnModeSim);
         modeBox.setAlignment(Pos.CENTER_LEFT);
 
-        Button btnZoomIn  = actionBtn("🔍+", "Phóng to (Scroll)");
-        Button btnZoomOut = actionBtn("🔍-", "Thu nhỏ (Scroll)");
-        Button btnUndo    = actionBtn("↩ Hoàn tác", "Ctrl + Z");
-        Button btnClear   = actionBtn("🗑 Xóa sạch", "Xóa toàn bộ");
+        Button btnUndo = actionBtn("↩ Hoàn tác", "Ctrl + Z");
+        Button btnClear = actionBtn("🗑 Clear", "Xóa toàn bộ");
 
-        btnZoomIn .setOnAction(e -> view.zoomIn());
-        btnZoomOut.setOnAction(e -> view.zoomOut());
-        btnUndo   .setOnAction(e -> view.undo());
-        btnClear  .setOnAction(e -> { 
-            view.saveSnapshot(); 
+        btnUndo.setOnAction(e -> view.undo());
+        btnClear.setOnAction(e -> {
+            view.saveSnapshot();
             view.getNetwork().clear();
             view.updateRenderData();
-            if (view.getController() != null) view.getController().clearVehicles();
+            if (view.getController() != null)
+                view.getController().clearVehicles();
             view.redraw();
         });
 
@@ -169,22 +167,25 @@ public class SimulationApp extends Application {
         btnDemoNet.setOnAction(e -> {
             view.saveSnapshot();
             view.loadDemoNetwork();
-            if (view.getController() != null) view.getController().clearVehicles();
+            if (view.getController() != null)
+                view.getController().clearVehicles();
             view.redraw();
         });
 
-        CheckBox cbGrid   = styledCb("Lưới",           true,  e -> view.setShowGrid  (((CheckBox)e.getSource()).isSelected()));
-        CheckBox cbLabels = styledCb("Nhãn đường",     true,  e -> view.setShowLabels(((CheckBox)e.getSource()).isSelected()));
+        CheckBox cbGrid = styledCb("Lưới", true, e -> view.setShowGrid(((CheckBox) e.getSource()).isSelected()));
+        CheckBox cbLabels = styledCb("Nhãn đường", true,
+                e -> view.setShowLabels(((CheckBox) e.getSource()).isSelected()));
 
         ToggleButton btnGraphicMode = new ToggleButton("Đồ họa");
         btnGraphicMode.setSelected(true);
-        btnGraphicMode.setStyle("-fx-background-color:#2a5a2a; -fx-text-fill:white; -fx-font-weight:bold; -fx-cursor:hand; -fx-padding:2 10 2 10; -fx-background-radius:5; -fx-pref-height:28px;");
+        btnGraphicMode.setStyle(
+                "-fx-background-color:#2a5a2a; -fx-text-fill:white; -fx-font-weight:bold; -fx-cursor:hand; -fx-padding:2 10 2 10; -fx-background-radius:5; -fx-pref-height:28px;");
         btnGraphicMode.setOnAction(e -> {
             boolean isGraphic = btnGraphicMode.isSelected();
             btnGraphicMode.setText(isGraphic ? "Đồ họa" : "Basic");
-            btnGraphicMode.setStyle(isGraphic ? 
-                "-fx-background-color:#2a5a2a; -fx-text-fill:white; -fx-font-weight:bold; -fx-cursor:hand; -fx-padding:2 10 2 10; -fx-background-radius:5; -fx-pref-height:28px;" : 
-                "-fx-background-color:#6a2a2a; -fx-text-fill:white; -fx-font-weight:bold; -fx-cursor:hand; -fx-padding:2 10 2 10; -fx-background-radius:5; -fx-pref-height:28px;");
+            btnGraphicMode.setStyle(isGraphic
+                    ? "-fx-background-color:#2a5a2a; -fx-text-fill:white; -fx-font-weight:bold; -fx-cursor:hand; -fx-padding:2 10 2 10; -fx-background-radius:5; -fx-pref-height:28px;"
+                    : "-fx-background-color:#6a2a2a; -fx-text-fill:white; -fx-font-weight:bold; -fx-cursor:hand; -fx-padding:2 10 2 10; -fx-background-radius:5; -fx-pref-height:28px;");
             view.setGraphicMode(isGraphic);
         });
 
@@ -193,7 +194,7 @@ public class SimulationApp extends Application {
 
         HBox topBar = new HBox(10,
                 modeBox,
-                vsep(), new HBox(4, btnZoomIn, btnZoomOut, btnUndo, btnClear, btnDemoNet),
+                vsep(), new HBox(4, btnUndo, btnClear, btnDemoNet),
                 vsep(), new HBox(10, btnGraphicMode, cbGrid, cbLabels),
                 vsep(), hint);
         topBar.setAlignment(Pos.CENTER_LEFT);
@@ -201,16 +202,15 @@ public class SimulationApp extends Application {
         topBar.setStyle("-fx-background-color:#141824;");
 
         // ==== CONTEXT BAR ====================================
-        HBox ctxPan    = buildCtxPan();
-        HBox ctxDraw   = buildCtxDraw(view);
-        HBox ctxEdit   = buildCtxEdit();
-        HBox ctxDelete = buildCtxDelete();
+        HBox ctxPan = buildCtxPan();
+        HBox ctxDraw = buildCtxDraw(view);
+        HBox ctxEdit = buildCtxEdit();
         HBox ctxDelLight = buildCtxDelLight();
-        HBox ctxSim    = buildCtxSimulation(view, spawner);
+        HBox ctxSim = buildCtxSimulation(view, spawner);
 
-        StackPane ctxStack = new StackPane(ctxPan, ctxDraw, ctxEdit, ctxDelete, ctxDelLight, ctxSim);
+        StackPane ctxStack = new StackPane(ctxPan, ctxDraw, ctxEdit, ctxDelLight, ctxSim);
         ctxPan.setVisible(true);
-        for (HBox h : new HBox[]{ctxDraw, ctxEdit, ctxDelete, ctxDelLight, ctxSim}) {
+        for (HBox h : new HBox[] { ctxDraw, ctxEdit, ctxDelLight, ctxSim }) {
             h.setVisible(false);
             StackPane.setAlignment(h, Pos.CENTER_LEFT);
         }
@@ -220,25 +220,28 @@ public class SimulationApp extends Application {
         ctxStack.setMinHeight(38);
 
         modeGroup.selectedToggleProperty().addListener((obs, old, nw) -> {
-            ctxPan   .setVisible(nw == btnModePan);
-            ctxDraw  .setVisible(nw == btnModeDraw);
-            ctxEdit  .setVisible(nw == btnModeEdit);
-            ctxDelete.setVisible(nw == btnModeDelete);
+            ctxPan.setVisible(nw == btnModePan);
+            ctxDraw.setVisible(nw == btnModeDraw);
+            ctxEdit.setVisible(nw == btnModeEdit);
             ctxDelLight.setVisible(nw == btnModeDelLight);
-            ctxSim   .setVisible(nw == btnModeSim);
-            if (nw == btnModePan)    view.setInteractionType(SimulationView.InteractionType.PAN);
-            if (nw == btnModeDraw)   view.setInteractionType(SimulationView.InteractionType.DRAW_ROAD);
-            if (nw == btnModeEdit)   view.setInteractionType(SimulationView.InteractionType.EDIT_MARKINGS);
-            if (nw == btnModeDelete) view.setInteractionType(SimulationView.InteractionType.DELETE);
-            if (nw == btnModeDelLight) view.setInteractionType(SimulationView.InteractionType.DELETE_LIGHT);
-            if (nw == btnModeSim)    view.setInteractionType(SimulationView.InteractionType.PAN);
+            ctxSim.setVisible(nw == btnModeSim);
+            if (nw == btnModePan)
+                view.setInteractionType(SimulationView.InteractionType.PAN);
+            if (nw == btnModeDraw)
+                view.setInteractionType(SimulationView.InteractionType.DRAW_ROAD);
+            if (nw == btnModeEdit)
+                view.setInteractionType(SimulationView.InteractionType.EDIT_MARKINGS);
+            if (nw == btnModeDelLight)
+                view.setInteractionType(SimulationView.InteractionType.DELETE_LIGHT);
+            if (nw == btnModeSim)
+                view.setInteractionType(SimulationView.InteractionType.PAN);
         });
 
         // ==== LAYOUT =========================================
         VBox header = new VBox(topBar, ctxStack);
         StackPane canvasHolder = new StackPane(view);
         canvasHolder.setStyle("-fx-background-color:#1a1f2e;");
-        view.widthProperty() .bind(canvasHolder.widthProperty());
+        view.widthProperty().bind(canvasHolder.widthProperty());
         view.heightProperty().bind(canvasHolder.heightProperty());
 
         BorderPane root = new BorderPane();
@@ -254,7 +257,10 @@ public class SimulationApp extends Application {
                 ".combo-box-popup .list-view{-fx-background-color:#1a2030;-fx-border-color:#3a4560;}" +
                 ".combo-box-popup .list-cell{-fx-text-fill:#c8d0e8;-fx-padding:4 8 4 8;}" +
                 ".combo-box-popup .list-cell:hover{-fx-background-color:#3d4a5c;}");
-        scene.setOnKeyPressed(e -> { if (e.isControlDown() && e.getCode() == KeyCode.Z) view.undo(); });
+        scene.setOnKeyPressed(e -> {
+            if (e.isControlDown() && e.getCode() == KeyCode.Z)
+                view.undo();
+        });
 
         stage.setTitle("Traffic Builder — Trình Dựng Lưới Giao Thông");
         stage.setScene(scene);
@@ -278,8 +284,10 @@ public class SimulationApp extends Application {
         Spinner<Integer> spinLane = new Spinner<>(1, 16, 4);
         spinLane.setEditable(true);
         spinLane.setPrefWidth(72);
-        spinLane.setStyle("-fx-background-color:#2a3550; -fx-background-radius:4; -fx-border-color:#3a4560; -fx-border-radius:4;");
-        spinLane.getEditor().setStyle("-fx-background-color:#2a3550; -fx-text-fill:#c8d0e8; -fx-font-weight:bold; -fx-font-size:12px; -fx-alignment:center;");
+        spinLane.setStyle(
+                "-fx-background-color:#2a3550; -fx-background-radius:4; -fx-border-color:#3a4560; -fx-border-radius:4;");
+        spinLane.getEditor().setStyle(
+                "-fx-background-color:#2a3550; -fx-text-fill:#c8d0e8; -fx-font-weight:bold; -fx-font-size:12px; -fx-alignment:center;");
         spinLane.getEditor().setAlignment(javafx.geometry.Pos.CENTER);
         view.setCurrentLaneConfig(4);
         // Commit khi Enter hoặc focus out
@@ -288,14 +296,20 @@ public class SimulationApp extends Application {
                 int v = Math.max(1, Math.min(16, Integer.parseInt(spinLane.getEditor().getText().trim())));
                 spinLane.getValueFactory().setValue(v);
                 view.setCurrentLaneConfig(v);
-            } catch (NumberFormatException ex) { spinLane.getEditor().setText(spinLane.getValue().toString()); }
+            } catch (NumberFormatException ex) {
+                spinLane.getEditor().setText(spinLane.getValue().toString());
+            }
             // Blur focus → con trỏ biến mất, người dùng thấy đã set xong
             spinLane.getParent().requestFocus();
         });
         spinLane.getEditor().focusedProperty().addListener((ob, ov, focused) -> {
-            if (!focused) spinLane.getEditor().getOnAction().handle(null);
+            if (!focused)
+                spinLane.getEditor().getOnAction().handle(null);
         });
-        spinLane.valueProperty().addListener((ob, ov, nv) -> { if (nv != null) view.setCurrentLaneConfig(nv); });
+        spinLane.valueProperty().addListener((ob, ov, nv) -> {
+            if (nv != null)
+                view.setCurrentLaneConfig(nv);
+        });
 
         // ── Chiều rộng làn: Slider + TextField ────────────────
         Label lblW = ctxLabel("Rộng làn:");
@@ -304,7 +318,8 @@ public class SimulationApp extends Application {
         sliderW.setShowTickMarks(false);
         TextField tfW = new TextField("3.5");
         tfW.setPrefWidth(46);
-        tfW.setStyle("-fx-background-color:#2a3550; -fx-text-fill:#e8d44d; -fx-font-size:12px; -fx-border-color:#3a4560;");
+        tfW.setStyle(
+                "-fx-background-color:#2a3550; -fx-text-fill:#e8d44d; -fx-font-size:12px; -fx-border-color:#3a4560;");
         Label lblWUnit = ctxLabel("m");
         sliderW.valueProperty().addListener((ob, ov, nv) -> {
             currentLaneWidth = Math.round(nv.doubleValue() * 10.0) / 10.0;
@@ -316,23 +331,30 @@ public class SimulationApp extends Application {
                 currentLaneWidth = Math.round(v * 10.0) / 10.0;
                 sliderW.setValue(currentLaneWidth);
                 tfW.setText(String.format("%.1f", currentLaneWidth));
-            } catch (NumberFormatException ex) { tfW.setText(String.format("%.1f", currentLaneWidth)); }
+            } catch (NumberFormatException ex) {
+                tfW.setText(String.format("%.1f", currentLaneWidth));
+            }
         };
         tfW.setOnAction(e -> applyWidth.run());
-        tfW.focusedProperty().addListener((ob, ov, focused) -> { if (!focused) applyWidth.run(); });
+        tfW.focusedProperty().addListener((ob, ov, focused) -> {
+            if (!focused)
+                applyWidth.run();
+        });
 
         // ── Chiều đường ──────────────────────────────────────
         Label lblDir = ctxLabel("Chiều:");
         ToggleButton btnTwo = smallToggle("⇄ Hai chiều", true);
         ToggleButton btnOne = smallToggle("→ Một chiều", false);
         ToggleGroup dirGroup = new ToggleGroup();
-        btnTwo.setToggleGroup(dirGroup); btnOne.setToggleGroup(dirGroup);
+        btnTwo.setToggleGroup(dirGroup);
+        btnOne.setToggleGroup(dirGroup);
         btnTwo.setSelected(true);
         dirGroup.selectedToggleProperty().addListener((ob, ov, nv) -> onewayMode = (nv == btnOne));
 
         // Callback: khi nhấn nút "✏ Sửa" trong popup info đường
         view.setOnSegmentSelected(seg -> {
-            if (seg == null) return;
+            if (seg == null)
+                return;
             showLaneConfigDialog(seg.getLaneCount(), seg);
             view.clearSelectedSegment();
         });
@@ -340,33 +362,45 @@ public class SimulationApp extends Application {
         // ── Cao tốc ──────────────────────────────────────────
         Label lblHwy = ctxLabel("Cao tốc:");
         CheckBox cbHwy = new CheckBox("Bật");
-        cbHwy.setTextFill(Color.web("#6bc5ff")); cbHwy.setStyle("-fx-font-size:11px;");
+        cbHwy.setTextFill(Color.web("#6bc5ff"));
+        cbHwy.setStyle("-fx-font-size:11px;");
         Label lblSpeed = ctxLabel("Tốc độ min:");
         TextField tfSpeed = new TextField("60");
         tfSpeed.setPrefWidth(44);
-        tfSpeed.setStyle("-fx-background-color:#2a3550; -fx-text-fill:#e8d44d; -fx-font-size:12px; -fx-border-color:#3a4560;");
+        tfSpeed.setStyle(
+                "-fx-background-color:#2a3550; -fx-text-fill:#e8d44d; -fx-font-size:12px; -fx-border-color:#3a4560;");
         Label lblSpeedU = ctxLabel("km/h");
         CheckBox cbEmerg = new CheckBox("Làn KCấp");
-        cbEmerg.setTextFill(Color.web("#ff9944")); cbEmerg.setStyle("-fx-font-size:11px;");
-        for (javafx.scene.Node n : new javafx.scene.Node[]{lblSpeed, tfSpeed, lblSpeedU, cbEmerg}) n.setVisible(false);
+        cbEmerg.setTextFill(Color.web("#ff9944"));
+        cbEmerg.setStyle("-fx-font-size:11px;");
+        for (javafx.scene.Node n : new javafx.scene.Node[] { lblSpeed, tfSpeed, lblSpeedU, cbEmerg })
+            n.setVisible(false);
         cbHwy.setOnAction(e -> {
             boolean on = cbHwy.isSelected();
             view.setHighwayMode(on);
-            for (javafx.scene.Node n : new javafx.scene.Node[]{lblSpeed, tfSpeed, lblSpeedU, cbEmerg}) n.setVisible(on);
+            for (javafx.scene.Node n : new javafx.scene.Node[] { lblSpeed, tfSpeed, lblSpeedU, cbEmerg })
+                n.setVisible(on);
         });
         tfSpeed.setOnAction(e -> {
-            try { view.setHighwayMinSpeed(Double.parseDouble(tfSpeed.getText().trim())); }
-            catch (NumberFormatException ex) {}
+            try {
+                view.setHighwayMinSpeed(Double.parseDouble(tfSpeed.getText().trim()));
+            } catch (NumberFormatException ex) {
+            }
             tfSpeed.getParent().requestFocus(); // blur → con trỏ biến mất
         });
         tfSpeed.focusedProperty().addListener((ob, ov, focused) -> {
-            if (!focused) { try { view.setHighwayMinSpeed(Double.parseDouble(tfSpeed.getText().trim())); } catch (NumberFormatException ignored) {} }
+            if (!focused) {
+                try {
+                    view.setHighwayMinSpeed(Double.parseDouble(tfSpeed.getText().trim()));
+                } catch (NumberFormatException ignored) {
+                }
+            }
         });
         cbEmerg.setOnAction(e -> view.setEmergencyLane(cbEmerg.isSelected()));
 
         // ── Auto-intersect ───────────────────────────────────
         CheckBox cbAuto = styledCb("Tự tạo nút giao", true,
-                e2 -> view.setAutoIntersect(((CheckBox)e2.getSource()).isSelected()));
+                e2 -> view.setAutoIntersect(((CheckBox) e2.getSource()).isSelected()));
 
         HBox box = hbox(
                 lblLane, spinLane,
@@ -379,7 +413,8 @@ public class SimulationApp extends Application {
     }
 
     /**
-     * Popup cấu hình chi tiết từng làn: loại xe + hướng rẽ riêng cho làn xuôi/ngược.
+     * Popup cấu hình chi tiết từng làn: loại xe + hướng rẽ riêng cho làn
+     * xuôi/ngược.
      */
     private void showLaneConfigDialog(int laneCount, RoadSegment targetSeg) {
         Stage dlg = new Stage();
@@ -400,7 +435,7 @@ public class SimulationApp extends Application {
 
         // Header row
         HBox header = new HBox(0);
-        for (String h : new String[]{"Làn", "Chiều", "Loại xe cho phép", "Hướng được phép đi"}) {
+        for (String h : new String[] { "Làn", "Chiều", "Loại xe cho phép", "Hướng được phép đi" }) {
             Label lh = new Label(h);
             lh.setStyle("-fx-text-fill:#8090b0; -fx-font-size:11px; -fx-font-weight:bold; -fx-padding:4 10 4 10;");
             lh.setPrefWidth(h.equals("Làn") || h.equals("Chiều") ? 70 : 260);
@@ -441,7 +476,7 @@ public class SimulationApp extends Application {
             final int idx = i;
             boolean isFwd = i < fwd;
             String dirLabel = isFwd ? "→ Xuôi" : "← Ngược";
-            Color dirColor  = isFwd ? Color.web("#6bc5ff") : Color.web("#ff9966");
+            Color dirColor = isFwd ? Color.web("#6bc5ff") : Color.web("#ff9966");
 
             HBox row = new HBox(0);
             row.setStyle(CELL);
@@ -458,19 +493,26 @@ public class SimulationApp extends Application {
 
             // Loại xe (checkboxes nhỏ + tooltip)
             HBox vehBox = new HBox(6);
-            vehBox.setPrefWidth(260); vehBox.setAlignment(Pos.CENTER_LEFT);
-            record VehDef(String icon, String tip, Lane.VehicleCategory cat) {}
-            var vehDefs = new VehDef[]{
-                    new VehDef("🚗", "Ô tô",            Lane.VehicleCategory.CAR),
-                    new VehDef("🛵", "Xe máy",          Lane.VehicleCategory.MOTORBIKE),
-                    new VehDef("🚌", "Xe buýt",          Lane.VehicleCategory.BUS),
-                    new VehDef("🚛", "Xe tải nặng",      Lane.VehicleCategory.TRUCK),
-                    new VehDef("🚲", "Xe đạp",           Lane.VehicleCategory.BICYCLE),
-                    new VehDef("🚨", "Xe khẩn cấp",     Lane.VehicleCategory.EMERGENCY),
+            vehBox.setPrefWidth(260);
+            vehBox.setAlignment(Pos.CENTER_LEFT);
+            record VehDef(String icon, String tip, Lane.VehicleCategory cat) {
+            }
+            var vehDefs = new VehDef[] {
+                    new VehDef("🚗", "Ô tô", Lane.VehicleCategory.CAR),
+                    new VehDef("🛵", "Xe máy", Lane.VehicleCategory.MOTORBIKE),
+                    new VehDef("🚌", "Xe buýt", Lane.VehicleCategory.BUS),
+                    new VehDef("🚛", "Xe tải nặng", Lane.VehicleCategory.TRUCK),
+                    new VehDef("🚲", "Xe đạp", Lane.VehicleCategory.BICYCLE),
+                    new VehDef("🚨", "Xe khẩn cấp", Lane.VehicleCategory.EMERGENCY),
             };
             for (var def : vehDefs) {
                 CheckBox cb = miniCb(def.icon(), vehPerLane[idx].contains(def.cat()),
-                        c -> { if(c) vehPerLane[idx].add(def.cat()); else vehPerLane[idx].remove(def.cat()); });
+                        c -> {
+                            if (c)
+                                vehPerLane[idx].add(def.cat());
+                            else
+                                vehPerLane[idx].remove(def.cat());
+                        });
                 Tooltip tt = new Tooltip(def.tip());
                 tt.setStyle("-fx-font-size:12px;");
                 Tooltip.install(cb, tt);
@@ -479,25 +521,32 @@ public class SimulationApp extends Application {
 
             // Hướng được phép đi (checkboxes nhỏ + tooltip)
             HBox movBox = new HBox(6);
-            movBox.setPrefWidth(250); movBox.setAlignment(Pos.CENTER_LEFT);
+            movBox.setPrefWidth(250);
+            movBox.setAlignment(Pos.CENTER_LEFT);
             Set<Lane.Movement> mvSet = movPerLane[idx];
-            record MovDef(String icon, String tip, Lane.Movement mov) {}
-            var movDefs = isFwd
-                    ? new MovDef[]{
-                    new MovDef("↑ Thẳng",   "Đi thẳng",       Lane.Movement.STRAIGHT),
-                    new MovDef("↰ Trái",    "Rẽ trái",        Lane.Movement.LEFT),
-                    new MovDef("↱ Phải",    "Rẽ phải",        Lane.Movement.RIGHT),
-                    new MovDef("↩ Quay đầu","Quay đầu xe",    Lane.Movement.U_TURN),
+            record MovDef(String icon, String tip, Lane.Movement mov) {
             }
-                    : new MovDef[]{
-                    new MovDef("↑ Thẳng",   "Đi thẳng",       Lane.Movement.STRAIGHT),
-                    new MovDef("↱ Phải",    "Rẽ phải (theo chiều ngược)", Lane.Movement.LEFT),
-                    new MovDef("↰ Trái",    "Rẽ trái (theo chiều ngược)", Lane.Movement.RIGHT),
-                    new MovDef("↩ Quay đầu","Quay đầu xe",    Lane.Movement.U_TURN),
-            };
+            var movDefs = isFwd
+                    ? new MovDef[] {
+                            new MovDef("↑ Thẳng", "Đi thẳng", Lane.Movement.STRAIGHT),
+                            new MovDef("↰ Trái", "Rẽ trái", Lane.Movement.LEFT),
+                            new MovDef("↱ Phải", "Rẽ phải", Lane.Movement.RIGHT),
+                            new MovDef("↩ Quay đầu", "Quay đầu xe", Lane.Movement.U_TURN),
+                    }
+                    : new MovDef[] {
+                            new MovDef("↑ Thẳng", "Đi thẳng", Lane.Movement.STRAIGHT),
+                            new MovDef("↱ Phải", "Rẽ phải (theo chiều ngược)", Lane.Movement.LEFT),
+                            new MovDef("↰ Trái", "Rẽ trái (theo chiều ngược)", Lane.Movement.RIGHT),
+                            new MovDef("↩ Quay đầu", "Quay đầu xe", Lane.Movement.U_TURN),
+                    };
             for (var def : movDefs) {
                 CheckBox cb = miniCb(def.icon(), mvSet.contains(def.mov()),
-                        c -> { if(c) mvSet.add(def.mov()); else mvSet.remove(def.mov()); });
+                        c -> {
+                            if (c)
+                                mvSet.add(def.mov());
+                            else
+                                mvSet.remove(def.mov());
+                        });
                 Tooltip tt = new Tooltip(def.tip());
                 tt.setStyle("-fx-font-size:12px;");
                 Tooltip.install(cb, tt);
@@ -512,14 +561,14 @@ public class SimulationApp extends Application {
         scroll.setFitToWidth(true);
         scroll.setPrefHeight(Math.min(laneCount * 48 + 10, 300));
         // Fix nền trắng ScrollPane — phải set cả viewport background
-        scroll.setStyle("-fx-background:#1a2030; -fx-background-color:#1a2030; -fx-border-color:#2a3550; -fx-border-width:1;");
+        scroll.setStyle(
+                "-fx-background:#1a2030; -fx-background-color:#1a2030; -fx-border-color:#2a3550; -fx-border-width:1;");
         scroll.getStylesheets().add(
                 "data:text/css,.scroll-pane>.viewport{-fx-background-color:#1a2030;}" +
                         ".scroll-pane{-fx-background-color:#1a2030;}" +
                         ".check-box .text{-fx-fill:#c8d0e8;}" +
                         ".scroll-bar:vertical .thumb{-fx-background-color:#3a4560;}" +
-                        ".scroll-bar:vertical .track{-fx-background-color:#141824;}"
-        );
+                        ".scroll-bar:vertical .track{-fx-background-color:#141824;}");
         root.getChildren().add(scroll);
 
         // Ghi chú
@@ -535,7 +584,7 @@ public class SimulationApp extends Application {
         btnCancel.setStyle("-fx-background-color:#3a3030; -fx-text-fill:#c8d0e8; " +
                 "-fx-cursor:hand; -fx-padding:5 16 5 16; -fx-background-radius:5;");
         btnApply.setOnAction(e -> {
-            perLaneVehicles  = vehPerLane;
+            perLaneVehicles = vehPerLane;
             perLaneMovements = movPerLane;
             usePerLaneConfig = true;
 
@@ -547,7 +596,7 @@ public class SimulationApp extends Application {
                             : targetSeg.getLanes().get(targetSeg.getLanes().size() - 1);
                     Lane updated = new Lane(i, old.getDirection(), old.getWidth(),
                             vehPerLane[i].isEmpty() ? EnumSet.of(Lane.VehicleCategory.CAR) : vehPerLane[i],
-                            movPerLane[i].isEmpty() ? EnumSet.of(Lane.Movement.STRAIGHT)   : movPerLane[i],
+                            movPerLane[i].isEmpty() ? EnumSet.of(Lane.Movement.STRAIGHT) : movPerLane[i],
                             old.getLeftMarking(), old.getRightMarking());
                     newLanes.add(updated);
                 }
@@ -556,7 +605,10 @@ public class SimulationApp extends Application {
             }
             dlg.close();
         });
-        btnCancel.setOnAction(e -> { usePerLaneConfig = false; dlg.close(); });
+        btnCancel.setOnAction(e -> {
+            usePerLaneConfig = false;
+            dlg.close();
+        });
 
         HBox btnRow = new HBox(10, btnApply, btnCancel);
         btnRow.setAlignment(Pos.CENTER_RIGHT);
@@ -568,9 +620,9 @@ public class SimulationApp extends Application {
     }
 
     @SuppressWarnings("unchecked")
-    private Set<Lane.VehicleCategory>[] perLaneVehicles  = null;
+    private Set<Lane.VehicleCategory>[] perLaneVehicles = null;
     @SuppressWarnings("unchecked")
-    private Set<Lane.Movement>[]        perLaneMovements = null;
+    private Set<Lane.Movement>[] perLaneMovements = null;
     private boolean usePerLaneConfig = false;
 
     private CheckBox miniCb(String label, boolean selected, java.util.function.Consumer<Boolean> onChange) {
@@ -583,14 +635,20 @@ public class SimulationApp extends Application {
     }
 
     private void rebuildAllowedVehicles(CheckBox cbCar, CheckBox cbMoto, CheckBox cbBus,
-                                        CheckBox cbTruck, CheckBox cbBike) {
+            CheckBox cbTruck, CheckBox cbBike) {
         allowedVehicles = EnumSet.noneOf(Lane.VehicleCategory.class);
-        if (cbCar.isSelected())   allowedVehicles.add(Lane.VehicleCategory.CAR);
-        if (cbMoto.isSelected())  allowedVehicles.add(Lane.VehicleCategory.MOTORBIKE);
-        if (cbBus.isSelected())   allowedVehicles.add(Lane.VehicleCategory.BUS);
-        if (cbTruck.isSelected()) allowedVehicles.add(Lane.VehicleCategory.TRUCK);
-        if (cbBike.isSelected())  allowedVehicles.add(Lane.VehicleCategory.BICYCLE);
-        if (allowedVehicles.isEmpty()) allowedVehicles.add(Lane.VehicleCategory.CAR);
+        if (cbCar.isSelected())
+            allowedVehicles.add(Lane.VehicleCategory.CAR);
+        if (cbMoto.isSelected())
+            allowedVehicles.add(Lane.VehicleCategory.MOTORBIKE);
+        if (cbBus.isSelected())
+            allowedVehicles.add(Lane.VehicleCategory.BUS);
+        if (cbTruck.isSelected())
+            allowedVehicles.add(Lane.VehicleCategory.TRUCK);
+        if (cbBike.isSelected())
+            allowedVehicles.add(Lane.VehicleCategory.BICYCLE);
+        if (allowedVehicles.isEmpty())
+            allowedVehicles.add(Lane.VehicleCategory.CAR);
     }
 
     private HBox buildCtxEdit() {
@@ -615,7 +673,6 @@ public class SimulationApp extends Application {
         return hbox(tip);
     }
 
-
     // ========================================================
     // WIDGET HELPERS
     // ========================================================
@@ -626,10 +683,9 @@ public class SimulationApp extends Application {
         String base = "-fx-font-size:13px; -fx-font-weight:bold; -fx-cursor:hand; " +
                 "-fx-pref-height:32px; -fx-padding:3 14 3 14; -fx-background-radius:6;";
         tb.setStyle(base + "-fx-background-color:#2e3d52; -fx-text-fill:#c8d0e8;");
-        tb.selectedProperty().addListener((o, was, is) ->
-                tb.setStyle(base + (is
-                        ? "-fx-background-color:#e8d44d; -fx-text-fill:#1a1f2e;"
-                        : "-fx-background-color:#2e3d52; -fx-text-fill:#c8d0e8;")));
+        tb.selectedProperty().addListener((o, was, is) -> tb.setStyle(base + (is
+                ? "-fx-background-color:#e8d44d; -fx-text-fill:#1a1f2e;"
+                : "-fx-background-color:#2e3d52; -fx-text-fill:#c8d0e8;")));
         return tb;
     }
 
@@ -638,10 +694,9 @@ public class SimulationApp extends Application {
         String base = "-fx-font-size:11px; -fx-cursor:hand; -fx-pref-height:24px; " +
                 "-fx-padding:2 8 2 8; -fx-background-radius:4;";
         tb.setStyle(base + "-fx-background-color:#2a3550; -fx-text-fill:#c8d0e8;");
-        tb.selectedProperty().addListener((o, was, is) ->
-                tb.setStyle(base + (is
-                        ? "-fx-background-color:#3a6090; -fx-text-fill:white;"
-                        : "-fx-background-color:#2a3550; -fx-text-fill:#c8d0e8;")));
+        tb.selectedProperty().addListener((o, was, is) -> tb.setStyle(base + (is
+                ? "-fx-background-color:#3a6090; -fx-text-fill:white;"
+                : "-fx-background-color:#2a3550; -fx-text-fill:#c8d0e8;")));
         tb.setSelected(selected);
         return tb;
     }
@@ -678,7 +733,7 @@ public class SimulationApp extends Application {
     }
 
     private CheckBox styledCb(String text, boolean selected,
-                              javafx.event.EventHandler<javafx.event.ActionEvent> handler) {
+            javafx.event.EventHandler<javafx.event.ActionEvent> handler) {
         CheckBox cb = new CheckBox(text);
         cb.setSelected(selected);
         cb.setTextFill(Color.web("#c8d0e8"));
@@ -688,16 +743,22 @@ public class SimulationApp extends Application {
 
     private void styleCombo(ComboBox<String> box) {
         box.setButtonCell(new javafx.scene.control.ListCell<>() {
-            @Override protected void updateItem(String item, boolean empty) {
+            @Override
+            protected void updateItem(String item, boolean empty) {
                 super.updateItem(item, empty);
                 setText(empty || item == null ? "" : item);
-                setStyle("-fx-text-fill:white; -fx-font-weight:bold; -fx-font-size:12px; -fx-background-color:transparent;");
+                setStyle(
+                        "-fx-text-fill:white; -fx-font-weight:bold; -fx-font-size:12px; -fx-background-color:transparent;");
             }
         });
         box.setCellFactory(lv -> new javafx.scene.control.ListCell<>() {
-            @Override protected void updateItem(String item, boolean empty) {
+            @Override
+            protected void updateItem(String item, boolean empty) {
                 super.updateItem(item, empty);
-                if (empty || item == null) { setText(""); return; }
+                if (empty || item == null) {
+                    setText("");
+                    return;
+                }
                 setText(item);
                 setStyle("-fx-text-fill:#c8d0e8; -fx-font-size:12px; -fx-background-color:transparent;");
             }
@@ -715,7 +776,6 @@ public class SimulationApp extends Application {
         b.setAlignment(Pos.CENTER_LEFT);
         return b;
     }
-
 
     // ============================================================
     // CONTEXT BAR: MÔ PHỎNG (spawn xe theo tỷ lệ)
@@ -743,26 +803,26 @@ public class SimulationApp extends Application {
         });
         spawner.setSpawnRatePerMinute(30);
 
-        Label lblCar  = ctxLabel("Ô tô:");
-        Slider sCar   = new Slider(0, 1, 0.5);
+        Label lblCar = ctxLabel("Ô tô:");
+        Slider sCar = new Slider(0, 1, 0.5);
         Label lblMoto = ctxLabel("Xe máy:");
-        Slider sMoto  = new Slider(0, 1, 0.4);
+        Slider sMoto = new Slider(0, 1, 0.4);
         Label lblBike = ctxLabel("Xe đạp:");
-        Slider sBike  = new Slider(0, 1, 0.1);
-        for (Slider s : new Slider[]{sCar, sMoto, sBike}) s.setPrefWidth(55);
+        Slider sBike = new Slider(0, 1, 0.1);
+        for (Slider s : new Slider[] { sCar, sMoto, sBike })
+            s.setPrefWidth(55);
 
-        sCar.valueProperty().addListener((ob, ov, nv) ->
-                spawner.setVehicleRatio(com.myteam.traffic.vehicle.VehicleType.CAR, nv.doubleValue()));
-        sMoto.valueProperty().addListener((ob, ov, nv) ->
-                spawner.setVehicleRatio(com.myteam.traffic.vehicle.VehicleType.MOTORBIKE, nv.doubleValue()));
-        sBike.valueProperty().addListener((ob, ov, nv) ->
-                spawner.setVehicleRatio(com.myteam.traffic.vehicle.VehicleType.BICYCLE, nv.doubleValue()));
+        sCar.valueProperty().addListener(
+                (ob, ov, nv) -> spawner.setVehicleRatio(com.myteam.traffic.vehicle.VehicleType.CAR, nv.doubleValue()));
+        sMoto.valueProperty().addListener((ob, ov, nv) -> spawner
+                .setVehicleRatio(com.myteam.traffic.vehicle.VehicleType.MOTORBIKE, nv.doubleValue()));
+        sBike.valueProperty().addListener((ob, ov, nv) -> spawner
+                .setVehicleRatio(com.myteam.traffic.vehicle.VehicleType.BICYCLE, nv.doubleValue()));
 
         Label lblAgg = ctxLabel("Lái ẩu:");
-        Slider sAgg  = new Slider(0, 1, 0.3);
+        Slider sAgg = new Slider(0, 1, 0.3);
         sAgg.setPrefWidth(55);
-        sAgg.valueProperty().addListener((ob, ov, nv) ->
-                spawner.setAggressiveRatio(nv.doubleValue()));
+        sAgg.valueProperty().addListener((ob, ov, nv) -> spawner.setAggressiveRatio(nv.doubleValue()));
 
         Label lblManual = ctxLabel("Thêm xe:");
         ComboBox<com.myteam.traffic.vehicle.VehicleType> typeBox = new ComboBox<>();
@@ -771,30 +831,32 @@ public class SimulationApp extends Application {
                 com.myteam.traffic.vehicle.VehicleType.MOTORBIKE,
                 com.myteam.traffic.vehicle.VehicleType.BICYCLE,
                 com.myteam.traffic.vehicle.VehicleType.AMBULANCE,
-                com.myteam.traffic.vehicle.VehicleType.FIRETRUCK
-        );
+                com.myteam.traffic.vehicle.VehicleType.FIRETRUCK);
         typeBox.setValue(com.myteam.traffic.vehicle.VehicleType.CAR);
         typeBox.setStyle("-fx-background-color:#2a3550;");
         styleVehicleTypeCombo(typeBox);
 
-        CheckBox cbAggOne = styledCb("Lái ẩu", false, e -> {});
+        CheckBox cbAggOne = styledCb("Lái ẩu", false, e -> {
+        });
 
         Button btnAddOne = actionBtn("+ Thêm xe", "Thêm 1 xe ngay theo loại đã chọn");
         btnAddOne.setOnAction(e -> {
             spawner.spawnManual(typeBox.getValue(), cbAggOne.isSelected());
-            if (!view.isSimulationRunning()) view.stepOnce();
+            if (!view.isSimulationRunning())
+                view.stepOnce();
         });
 
-        ToggleButton btnDelMode = smallToggle("🗑 Xóa xe", false);
+        ToggleButton btnDelMode = smallToggle("🗑 Xóa 1 xe", false);
         btnDelMode.setOnAction(e -> {
             view.setDeleteVehicleMode(btnDelMode.isSelected());
         });
 
-        Button btnClearAll = actionBtn("🗑 Xóa tất cả", "Xóa toàn bộ phương tiện đang chạy");
+        Button btnClearAll = actionBtn("🗑 Clear xe", "Xóa toàn bộ phương tiện đang chạy");
         btnClearAll.setOnAction(e -> {
             if (view.getController() != null) {
                 view.getController().clearVehicles();
-                if (!view.isSimulationRunning()) view.stepOnce();
+                if (!view.isSimulationRunning())
+                    view.stepOnce();
             }
         });
 
@@ -810,21 +872,29 @@ public class SimulationApp extends Application {
 
     private void styleVehicleTypeCombo(ComboBox<com.myteam.traffic.vehicle.VehicleType> box) {
         box.setButtonCell(new javafx.scene.control.ListCell<>() {
-            @Override protected void updateItem(com.myteam.traffic.vehicle.VehicleType item, boolean empty) {
+            @Override
+            protected void updateItem(com.myteam.traffic.vehicle.VehicleType item, boolean empty) {
                 super.updateItem(item, empty);
                 setText(empty || item == null ? "" : item.toString());
-                setStyle("-fx-text-fill:white; -fx-font-weight:bold; -fx-font-size:12px; -fx-background-color:transparent;");
+                setStyle(
+                        "-fx-text-fill:white; -fx-font-weight:bold; -fx-font-size:12px; -fx-background-color:transparent;");
             }
         });
         box.setCellFactory(lv -> new javafx.scene.control.ListCell<>() {
-            @Override protected void updateItem(com.myteam.traffic.vehicle.VehicleType item, boolean empty) {
+            @Override
+            protected void updateItem(com.myteam.traffic.vehicle.VehicleType item, boolean empty) {
                 super.updateItem(item, empty);
-                if (empty || item == null) { setText(""); return; }
+                if (empty || item == null) {
+                    setText("");
+                    return;
+                }
                 setText(item.toString());
                 setStyle("-fx-text-fill:#c8d0e8; -fx-font-size:12px; -fx-background-color:transparent;");
             }
         });
     }
 
-    public static void main(String[] args) { launch(args); }
+    public static void main(String[] args) {
+        launch(args);
+    }
 }
