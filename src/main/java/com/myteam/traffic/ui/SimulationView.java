@@ -994,6 +994,32 @@ public class SimulationView extends Canvas {
             root.getChildren().add(liveStateLabel);
         }
 
+        // Chọn loại đèn (Không đếm ngược, Đếm 10s cuối)
+        javafx.scene.control.CheckBox chkNoCountdown = new javafx.scene.control.CheckBox("Không đếm ngược");
+        chkNoCountdown.setStyle("-fx-text-fill:#c8d0e8; -fx-font-size:12px;");
+        javafx.scene.control.CheckBox chkTenSec = new javafx.scene.control.CheckBox("Đếm 10s cuối");
+        chkTenSec.setStyle("-fx-text-fill:#c8d0e8; -fx-font-size:12px;");
+
+        // Loại trừ nhau
+        chkNoCountdown.selectedProperty().addListener((o, oldV, newV) -> {
+            if (newV) chkTenSec.setSelected(false);
+        });
+        chkTenSec.selectedProperty().addListener((o, oldV, newV) -> {
+            if (newV) chkNoCountdown.setSelected(false);
+        });
+
+        if (existingLight != null) {
+            com.myteam.traffic.light.TrafficLight tl = existingLight.getLight();
+            if (tl instanceof com.myteam.traffic.light.NoCountdownLight) {
+                chkNoCountdown.setSelected(true);
+            } else if (tl instanceof com.myteam.traffic.light.TenSecLight) {
+                chkTenSec.setSelected(true);
+            }
+        }
+
+        javafx.scene.layout.HBox typeRow = new javafx.scene.layout.HBox(15, chkNoCountdown, chkTenSec);
+        root.getChildren().add(typeRow);
+
         // Ghi chú
         javafx.scene.control.Label note = new javafx.scene.control.Label(
                 "💡 Đèn sẽ áp dụng đồng bộ cho toàn bộ nút giao.");
@@ -1076,7 +1102,14 @@ public class SimulationView extends Canvas {
                     while (diff > Math.PI) diff -= 2 * Math.PI;
                     diff = Math.abs(diff);
 
-                    com.myteam.traffic.light.CountdownLight newLight = new com.myteam.traffic.light.CountdownLight(syncR, g, y);
+                    com.myteam.traffic.light.TrafficLight newLight;
+                    if (chkNoCountdown.isSelected()) {
+                        newLight = new com.myteam.traffic.light.NoCountdownLight(syncR, g, y);
+                    } else if (chkTenSec.isSelected()) {
+                        newLight = new com.myteam.traffic.light.TenSecLight(syncR, g, y);
+                    } else {
+                        newLight = new com.myteam.traffic.light.CountdownLight(syncR, g, y);
+                    }
                     
                     if (diff <= Math.PI / 4 || Math.abs(diff - Math.PI) <= Math.PI / 4) {
                         newLight.setInitialState(mainInitialState, mainInitialSec);
