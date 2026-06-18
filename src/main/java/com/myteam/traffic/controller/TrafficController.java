@@ -1,6 +1,7 @@
 package com.myteam.traffic.controller;
 
 import com.myteam.traffic.behavior.common.Action;
+import com.myteam.traffic.behavior.AggressiveDriver;
 import com.myteam.traffic.behavior.DriverBehavior;
 import com.myteam.traffic.context.RoadContext;
 import com.myteam.traffic.light.TrafficLight;
@@ -572,7 +573,8 @@ public class TrafficController {
         }
 
         // FIX LỖI VƯỢT STOPLINE: Dừng trước stopline (mép ngoài giao lộ)
-        if (!v.isEmergency()) {
+        // AggressiveDriver có thể vượt đèn đỏ
+        if (!v.isEmergency() && !(v.getBehavior() instanceof AggressiveDriver)) {
             TrafficLightState lightState = getCurrentLightState(v);
             if (lightState == TrafficLightState.RED || lightState == TrafficLightState.YELLOW) {
                 boolean isForward = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD);

@@ -1,5 +1,6 @@
 package com.myteam.traffic.rule;
 
+import com.myteam.traffic.behavior.AggressiveDriver;
 import com.myteam.traffic.behavior.common.Action;
 import com.myteam.traffic.context.RoadContext;
 import com.myteam.traffic.light.TrafficLightState;
@@ -46,7 +47,10 @@ public class SignalRule implements TrafficRule {
      */
     @Override
     public boolean appliesTo(Vehicle v) {
-        return !v.isEmergency();
+        //return !v.isEmergency();
+        if (v.isEmergency()) return false;
+        if (v.getBehavior() instanceof AggressiveDriver) return false;
+        return true;
     }
 
     // =========================================================
