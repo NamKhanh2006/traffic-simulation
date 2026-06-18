@@ -93,6 +93,9 @@ public abstract class TrafficLight {
      */
     protected int secondsRemaining;
 
+    /** Tích lũy thời gian lẻ (từ deltaTime) để đếm giây chính xác */
+    protected double timeAccumulator = 0.0;
+
     public TrafficLight(int redTime, int greenTime, int yellowTime) {
         this.redTime          = redTime;
         this.greenTime        = greenTime;
@@ -101,15 +104,31 @@ public abstract class TrafficLight {
         this.secondsRemaining = redTime;
     }
 
+    public void setInitialState(TrafficLightState state, int remaining) {
+        this.currentState = state;
+        this.secondsRemaining = remaining;
+    }
+
     // =========================================================
     // Cập nhật mỗi tick (Phase 1 của simulation)
     // =========================================================
 
     /**
-     * Gọi mỗi giây bởi World/Controller (không phải mỗi frame render).
-     * Mỗi subclass tự quyết định khi nào chuyển trạng thái.
+     * Gọi mỗi frame bởi World/Controller.
+     * Tích lũy deltaTime và đếm ngược giây chuẩn xác.
      */
-    public abstract void tick();
+    public void tick(double deltaTime) {
+        timeAccumulator += deltaTime;
+        if (timeAccumulator >= 1.0) {
+            int secondsPassed = (int) timeAccumulator;
+            timeAccumulator -= secondsPassed;
+            
+            secondsRemaining -= secondsPassed;
+            if (secondsRemaining <= 0) {
+                switchTo(nextState(currentState));
+            }
+        }
+    }
 
     // =========================================================
     // Điều khiển thủ công (người dùng click vào đèn)
@@ -159,7 +178,7 @@ public abstract class TrafficLight {
         this.secondsRemaining = getDurationForState(next);
     }
 
-    protected int getDurationForState(TrafficLightState state) {
+    public int getDurationForState(TrafficLightState state) {
         switch (state) {
             case RED:    return redTime;
             case GREEN:  return greenTime;

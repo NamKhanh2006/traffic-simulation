@@ -45,6 +45,8 @@ public class SimulationView extends Canvas {
     private RoadNetwork network;
     private NetworkRenderData data;
 
+    private final TrafficLightRenderer lightRenderer = new TrafficLightRenderer(this);
+
     private double scale = 1.0;
     private double translateX = 0;
     private double translateY = 0;
@@ -66,6 +68,8 @@ public class SimulationView extends Canvas {
     // ── Mô phỏng (spawn + tick) ────────────────────────────────
     private VehicleSpawner spawner;
     private boolean simulationRunning = false;
+    private boolean deleteVehicleMode = false;
+    private Vehicle hoveredVehicle = null;
     private static final double FIXED_DT = 0.033;  // 30 ticks/second
 
     private final javafx.animation.AnimationTimer simLoop = new javafx.animation.AnimationTimer() {
@@ -103,6 +107,12 @@ public class SimulationView extends Canvas {
         if (run) simLoop.start(); else simLoop.stop();
     }
     public boolean isSimulationRunning() { return simulationRunning; }
+
+    public void setDeleteVehicleMode(boolean b) { 
+        this.deleteVehicleMode = b; 
+        if (!b) hoveredVehicle = null; 
+        redraw(); 
+    }
 
     /** Chạy 1 tick thủ công (vd. ngay sau khi thêm xe lúc đang pause) để cập nhật hiển thị. */
     public void stepOnce() {
@@ -156,7 +166,7 @@ public class SimulationView extends Canvas {
      * "click để đóng popup" bị forward xuống canvas gây pan/select không mong muốn.
      */
     private boolean ignoreNextPress = false;
-    private final Stack<NetworkSnapshot> undoStack = new Stack<>();
+    private final java.util.Deque<Runnable> undoStack = new java.util.ArrayDeque<>();
 
     private static class NetworkSnapshot {
         List<RoadSegment>  roads;
@@ -172,8 +182,18 @@ public class SimulationView extends Canvas {
         }
     }
 
-    public void saveSnapshot() { if (network != null) undoStack.push(new NetworkSnapshot(network)); }
-    public void undo()         { if (!undoStack.isEmpty() && network != null) { undoStack.pop().restore(network); updateRenderData(); } }
+    public void saveSnapshot() { 
+        if (network != null) {
+            NetworkSnapshot snap = new NetworkSnapshot(network);
+            undoStack.push(() -> { snap.restore(network); updateRenderData(); });
+        } 
+    }
+    public void undo() { 
+        if (!undoStack.isEmpty() && network != null) { 
+            undoStack.pop().run(); 
+            redraw();
+        } 
+    }
 
     // ── Constructor ──────────────────────────────────────────
     public SimulationView(double width, double height) {
@@ -442,6 +462,40 @@ public class SimulationView extends Canvas {
             }
         }
 
+        // -- Vẽ đèn giao thông (SegmentLights) --
+        if (controller != null) {
+            for (com.myteam.traffic.light.SegmentLight sl : controller.getAllSegmentLights()) {
+                double ang = sl.getAngle(); // góc đường (start → end)
+                double baseWx = sl.getWorldX(); // tâm giao lộ (endpoint của segment)
+                double baseWy = sl.getWorldY();
+
+                // Tìm bán kính giao lộ để lùi đèn ra stopline
+                double interRadius = 30.0;
+                if (data != null && data.intersections != null) {
+                    for (com.myteam.traffic.model.infrastructure.IntersectionRenderData ird : data.intersections) {
+                        if (Math.hypot(baseWx - ird.centerX, baseWy - ird.centerY) < 5.0) {
+                            interRadius = ird.radius;
+                            break;
+                        }
+                    }
+                }
+
+                // Lùi đèn ra khỏi tâm giao lộ về phía đường đến stopline
+                // atEnd=true  → đường đến theo chiều ang → lùi ngược lại (dirSign = -1)
+                // atEnd=false → đường đến theo chiều ngược ang → tiến theo ang (dirSign = +1)
+                double dirSign = sl.isAtEnd() ? -1.0 : 1.0;
+                double stoplineWx = baseWx + dirSign * interRadius * Math.cos(ang);
+                double stoplineWy = baseWy + dirSign * interRadius * Math.sin(ang);
+
+                // Offset sang trái đường (giao thông đi bên trái)
+                double sideAng = sl.isAtEnd() ? (ang - Math.PI / 2) : (ang + Math.PI / 2);
+                double sideOffset = sl.getSegment().getLaneCount() * 20.0 / 2.0 + 8.0;
+                double wx = stoplineWx + Math.cos(sideAng) * sideOffset;
+                double wy = stoplineWy + Math.sin(sideAng) * sideOffset;
+                lightRenderer.draw(gc, sl.getLight(), wx, wy);
+            }
+        }
+
         // -- Ve xe (controller.getVehicles()) --
         if (controller != null) {
             gc.save();
@@ -449,7 +503,33 @@ public class SimulationView extends Canvas {
             gc.scale(scale, scale);
             for (Vehicle v : controller.getVehicles()) {
                 vehicleRenderer.render(gc, v, true);
+                if (deleteVehicleMode && v == hoveredVehicle) {
+                    gc.save();
+                    gc.translate(v.getX(), v.getY());
+                    gc.rotate(v.getDirection().toDegrees());
+                    gc.setStroke(Color.RED);
+                    gc.setLineWidth(2.0);
+                    gc.strokeRect(-v.getWidth() / 2 - 2, -v.getHeight() / 2 - 2, v.getWidth() + 4, v.getHeight() + 4);
+                    gc.restore();
+                }
             }
+
+            // -- Ve hieu ung no (explosions) --
+            for (com.myteam.traffic.ui.ExplosionEffect exp : controller.getExplosions()) {
+                double p = exp.progress();
+                double expRadius = 5.0 + p * 40.0; // Phóng to dần
+                double expAlpha = Math.max(0, 1.0 - p); // Mờ dần
+
+                // Vòng ngoài màu cam
+                gc.setFill(Color.web("#ff5500", expAlpha * 0.8));
+                gc.fillOval(exp.x - expRadius, exp.y - expRadius, expRadius * 2, expRadius * 2);
+
+                // Vòng trong màu vàng sáng
+                double innerRadius = expRadius * 0.6;
+                gc.setFill(Color.web("#ffcc00", expAlpha));
+                gc.fillOval(exp.x - innerRadius, exp.y - innerRadius, innerRadius * 2, innerRadius * 2);
+            }
+
             gc.restore();
         }
 
@@ -587,6 +667,7 @@ public class SimulationView extends Canvas {
     private final Label  roadInfoLabel         = new Label();
     private final Button roadInfoEditBtn       = new Button("✏   Sửa đường này");
     private final Button roadInfoEditMarkBtn   = new Button("🎨  Sửa vạch kẻ");
+    private final Button roadInfoLightBtn      = new Button("🚦  Thêm/Sửa đèn");
     private RoadSegment  tipSegment  = null;
     private boolean      tipPinned   = false;   // true = chuột phải đã pin
 
@@ -637,12 +718,30 @@ public class SimulationView extends Canvas {
             }
         });
 
-        // HBox chứa 2 nút cạnh nhau
-        javafx.scene.layout.HBox btnRow = new javafx.scene.layout.HBox(8,
-                roadInfoEditBtn, roadInfoEditMarkBtn);
+        // Nút Thêm/Sửa đèn giao thông
+        roadInfoLightBtn.setStyle(
+                "-fx-background-color:#4a3010; -fx-text-fill:#ffd080;" +
+                        "-fx-font-size:11px; -fx-cursor:hand; -fx-padding:5 16 5 16;" +
+                        "-fx-background-radius:4; -fx-border-color:#c08030; -fx-border-radius:4;");
+        roadInfoLightBtn.setVisible(false);
+        roadInfoLightBtn.setManaged(false);
+        roadInfoLightBtn.setOnAction(e -> {
+            RoadSegment seg = tipSegment;
+            ignoreNextPress = true;
+            hideRoadTip();
+            if (seg != null && controller != null) {
+                showTrafficLightDialog(seg);
+            }
+        });
 
-        // hintLabel là index 1, btnRow là index 2
-        VBox box = new VBox(6, roadInfoLabel, hintLabel, btnRow);
+        // HBox chứa 3 nút cạnh nhau — hàng 1: Sửa đường + Sửa vạch, hàng 2: Thêm đèn
+        javafx.scene.layout.HBox btnRow1 = new javafx.scene.layout.HBox(8,
+                roadInfoEditBtn, roadInfoEditMarkBtn);
+        javafx.scene.layout.HBox btnRow2 = new javafx.scene.layout.HBox(8,
+                roadInfoLightBtn);
+
+        // hintLabel là index 1, btnRow1 là index 2, btnRow2 là index 3
+        VBox box = new VBox(6, roadInfoLabel, hintLabel, btnRow1, btnRow2);
         box.setStyle(
                 "-fx-background-color:#0d1420e8; -fx-border-color:#3a4a6a;" +
                         "-fx-border-width:1; -fx-padding:8 12 8 12;" +
@@ -697,12 +796,16 @@ public class SimulationView extends Canvas {
         VBox box = (VBox) roadInfoPopup.getContent().get(0);
         box.getChildren().get(1).setVisible(true);   // hintLabel
         box.getChildren().get(1).setManaged(true);
-        box.getChildren().get(2).setVisible(false);  // btnRow
+        box.getChildren().get(2).setVisible(false);  // btnRow1
         box.getChildren().get(2).setManaged(false);
+        box.getChildren().get(3).setVisible(false);  // btnRow2
+        box.getChildren().get(3).setManaged(false);
         roadInfoEditBtn.setVisible(false);
         roadInfoEditBtn.setManaged(false);
         roadInfoEditMarkBtn.setVisible(false);
         roadInfoEditMarkBtn.setManaged(false);
+        roadInfoLightBtn.setVisible(false);
+        roadInfoLightBtn.setManaged(false);
         if (!roadInfoPopup.isShowing())
             roadInfoPopup.show(this, screenX + 18, screenY + 14);
         else {
@@ -715,16 +818,20 @@ public class SimulationView extends Canvas {
         tipPinned = true;
         tipSegment = seg;
         roadInfoLabel.setText(buildRoadTipText(seg));
-        // Pin: ẩn hint, hiện hàng nút (cả 2 nút Sửa)
+        // Pin: ẩn hint, hiện hàng nút (cả 3 nút Sửa)
         VBox box = (VBox) roadInfoPopup.getContent().get(0);
         box.getChildren().get(1).setVisible(false);  // hintLabel
         box.getChildren().get(1).setManaged(false);
-        box.getChildren().get(2).setVisible(true);   // btnRow
+        box.getChildren().get(2).setVisible(true);   // btnRow1
         box.getChildren().get(2).setManaged(true);
+        box.getChildren().get(3).setVisible(true);   // btnRow2 (light)
+        box.getChildren().get(3).setManaged(true);
         roadInfoEditBtn.setVisible(true);
         roadInfoEditBtn.setManaged(true);
         roadInfoEditMarkBtn.setVisible(true);
         roadInfoEditMarkBtn.setManaged(true);
+        roadInfoLightBtn.setVisible(true);
+        roadInfoLightBtn.setManaged(true);
         // Luôn show tại vị trí mới — kể cả đang hiện từ hover trước đó
         roadInfoPopup.hide();
         roadInfoPopup.show(this, screenX + 18, screenY + 14);
@@ -737,14 +844,301 @@ public class SimulationView extends Canvas {
         roadInfoEditBtn.setManaged(false);
         roadInfoEditMarkBtn.setVisible(false);
         roadInfoEditMarkBtn.setManaged(false);
-        // Ẩn btnRow
+        roadInfoLightBtn.setVisible(false);
+        roadInfoLightBtn.setManaged(false);
+        // Ẩn btnRow1 + btnRow2
         VBox box = (VBox) roadInfoPopup.getContent().get(0);
         if (box.getChildren().size() > 2) {
             box.getChildren().get(2).setVisible(false);
             box.getChildren().get(2).setManaged(false);
         }
+        if (box.getChildren().size() > 3) {
+            box.getChildren().get(3).setVisible(false);
+            box.getChildren().get(3).setManaged(false);
+        }
         roadInfoPopup.hide();
     }
+
+    /**
+     * Hiển thị dialog thêm/sửa đèn giao thông cho đoạn đường.
+     * Cho phép cấu hình thời gian xanh/đỏ/vàng, và chọn đặt đèn ở đầu hay cuối đường.
+     */
+    private void showTrafficLightDialog(RoadSegment seg) {
+        javafx.stage.Stage dlg = new javafx.stage.Stage();
+        dlg.setTitle("🚦 Cấu hình đèn giao thông — đoạn đường");
+        dlg.initModality(javafx.stage.Modality.APPLICATION_MODAL);
+
+        String DARK = "-fx-background-color:#1a2030;";
+        String FIELD_STYLE = "-fx-background-color:#2a3550; -fx-text-fill:#e8d44d; " +
+                "-fx-font-size:12px; -fx-border-color:#3a4560; -fx-border-radius:4; -fx-background-radius:4;";
+
+        javafx.scene.layout.VBox root = new javafx.scene.layout.VBox(14);
+        root.setStyle(DARK + " -fx-padding:18;");
+
+        // Tiêu đề
+        javafx.scene.control.Label title = new javafx.scene.control.Label("🚦  Đèn giao thông — " +
+                seg.getLaneCount() + " làn  |  " + String.format("%.0f m", seg.getLength() / 20.0 * 3.5));
+        title.setStyle("-fx-text-fill:#ffd080; -fx-font-size:13px; -fx-font-weight:bold;");
+        root.getChildren().add(title);
+
+        // Tìm đèn hiện tại gắn với segment này (nếu có)
+        java.util.List<com.myteam.traffic.light.SegmentLight> existing =
+                controller.getSegmentLightsForSegment(seg);
+        com.myteam.traffic.light.SegmentLight existingLight =
+                existing.isEmpty() ? null : existing.get(0);
+
+        // Spinner thời gian
+        javafx.scene.control.Label lblGreen  = new javafx.scene.control.Label("🟢  Xanh (giây):");
+        javafx.scene.control.Label lblRed    = new javafx.scene.control.Label("🔴  Đỏ (giây):");
+        javafx.scene.control.Label lblYellow = new javafx.scene.control.Label("🟡  Vàng (giây):");
+        for (javafx.scene.control.Label l : new javafx.scene.control.Label[]{lblGreen, lblRed, lblYellow})
+            l.setStyle("-fx-text-fill:#c8d0e8; -fx-font-size:12px;");
+
+        int initGreen  = existingLight != null ? existingLight.getLight().getSecondsRemaining() : 30;
+        int initRed    = 30;
+        int initYellow = 5;
+        // Lấy thời gian hiện tại nếu có đèn sẵn
+        if (existingLight != null) {
+            com.myteam.traffic.light.TrafficLight tl = existingLight.getLight();
+            // Dùng getDurationForState thông qua reflection hoặc mặc định 30/5/30
+            initGreen  = tl.getDurationForState(com.myteam.traffic.light.TrafficLightState.GREEN);
+            initRed    = tl.getDurationForState(com.myteam.traffic.light.TrafficLightState.RED);
+            initYellow = tl.getDurationForState(com.myteam.traffic.light.TrafficLightState.YELLOW);
+        }
+
+        javafx.scene.control.Spinner<Integer> spinGreen  = new javafx.scene.control.Spinner<>(1, 120, initGreen);
+        javafx.scene.control.Spinner<Integer> spinRed    = new javafx.scene.control.Spinner<>(1, 120, initRed);
+        javafx.scene.control.Spinner<Integer> spinYellow = new javafx.scene.control.Spinner<>(1, 30,  initYellow);
+        for (javafx.scene.control.Spinner<Integer> s : new javafx.scene.control.Spinner[]{spinGreen, spinRed, spinYellow}) {
+            s.setEditable(true);
+            s.setPrefWidth(90);
+            s.setStyle("-fx-background-color:#2a3550; -fx-border-color:#3a4560;");
+            s.getEditor().setStyle(FIELD_STYLE);
+        }
+
+        javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
+        grid.setHgap(12); grid.setVgap(10);
+        grid.add(lblGreen,  0, 0); grid.add(spinGreen,  1, 0);
+        grid.add(lblRed,    0, 1); grid.add(spinRed,    1, 1);
+        grid.add(lblYellow, 0, 2); grid.add(spinYellow, 1, 2);
+
+        javafx.scene.control.Label lblInitState = new javafx.scene.control.Label("Trạng thái hiện tại:");
+        lblInitState.setStyle("-fx-text-fill:#c8d0e8; -fx-font-size:12px;");
+        javafx.scene.control.ComboBox<com.myteam.traffic.light.TrafficLightState> cmbInitState = new javafx.scene.control.ComboBox<>();
+        cmbInitState.getItems().addAll(com.myteam.traffic.light.TrafficLightState.GREEN, com.myteam.traffic.light.TrafficLightState.RED, com.myteam.traffic.light.TrafficLightState.YELLOW);
+        cmbInitState.setValue(existingLight != null ? existingLight.getLight().getCurrentState() : com.myteam.traffic.light.TrafficLightState.GREEN);
+        cmbInitState.setStyle("-fx-background-color:#2a3550; -fx-text-fill:white; -fx-font-size:11px;");
+
+        javafx.scene.control.Label lblInitSec = new javafx.scene.control.Label("Số giây hiện tại:");
+        lblInitSec.setStyle("-fx-text-fill:#c8d0e8; -fx-font-size:12px;");
+        javafx.scene.control.Spinner<Integer> spinInitSec = new javafx.scene.control.Spinner<>(1, 120, existingLight != null ? (int)Math.ceil(existingLight.getLight().getSecondsRemaining()) : 15);
+        spinInitSec.setEditable(true);
+        spinInitSec.setPrefWidth(90);
+        spinInitSec.setStyle("-fx-background-color:#2a3550; -fx-border-color:#3a4560;");
+        spinInitSec.getEditor().setStyle(FIELD_STYLE);
+
+        grid.add(lblInitState, 0, 3); grid.add(cmbInitState, 1, 3);
+        grid.add(lblInitSec, 0, 4); grid.add(spinInitSec, 1, 4);
+
+        root.getChildren().add(grid);
+
+        // Chọn vị trí đèn: đầu hay cuối đường
+        javafx.scene.control.Label lblPos = new javafx.scene.control.Label("Vị trí đèn:");
+        lblPos.setStyle("-fx-text-fill:#c8d0e8; -fx-font-size:12px;");
+        javafx.scene.control.ToggleButton btnEnd   = new javafx.scene.control.ToggleButton("Cuối đường →");
+        javafx.scene.control.ToggleButton btnStart = new javafx.scene.control.ToggleButton("← Đầu đường");
+        javafx.scene.control.ToggleGroup posGroup  = new javafx.scene.control.ToggleGroup();
+        btnEnd.setToggleGroup(posGroup);
+        btnStart.setToggleGroup(posGroup);
+        String toggleBase = "-fx-font-size:11px; -fx-cursor:hand; -fx-padding:4 10 4 10; -fx-background-radius:4;";
+        btnEnd  .setStyle(toggleBase + "-fx-background-color:#2a3550; -fx-text-fill:#c8d0e8;");
+        btnStart.setStyle(toggleBase + "-fx-background-color:#2a3550; -fx-text-fill:#c8d0e8;");
+        // Highlight khi chọn
+        for (javafx.scene.control.ToggleButton tb : new javafx.scene.control.ToggleButton[]{btnEnd, btnStart}) {
+            tb.selectedProperty().addListener((o, was, is) ->
+                tb.setStyle(toggleBase + (is
+                    ? "-fx-background-color:#3a6090; -fx-text-fill:white;"
+                    : "-fx-background-color:#2a3550; -fx-text-fill:#c8d0e8;"))
+            );
+        }
+        boolean existingAtEnd = existingLight == null || existingLight.isAtEnd();
+        if (existingAtEnd) btnEnd.setSelected(true); else btnStart.setSelected(true);
+        javafx.scene.layout.HBox posRow = new javafx.scene.layout.HBox(8, lblPos, btnEnd, btnStart);
+        posRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        root.getChildren().add(posRow);
+
+        // Hiển thị trạng thái đèn hiện tại nếu đang edit
+        if (existingLight != null) {
+            javafx.scene.control.Label liveStateLabel = new javafx.scene.control.Label();
+            liveStateLabel.setStyle("-fx-font-size:12px; -fx-font-weight:bold;");
+            Runnable updateLabel = () -> {
+                com.myteam.traffic.light.TrafficLight tl = existingLight.getLight();
+                com.myteam.traffic.light.TrafficLightState st = tl.getCurrentState();
+                int remain = (int) Math.ceil(tl.getSecondsRemaining());
+                String color = switch(st) {
+                    case GREEN -> "#40ff40";
+                    case RED -> "#ff4040";
+                    case YELLOW -> "#ffff40";
+                };
+                liveStateLabel.setText(String.format("Trạng thái: %s · Còn: %ds", st, remain));
+                liveStateLabel.setTextFill(javafx.scene.paint.Color.web(color));
+            };
+            updateLabel.run();
+            // Timeline để update nhãn mỗi 0.5s
+            javafx.animation.Timeline timeline = new javafx.animation.Timeline(
+                new javafx.animation.KeyFrame(javafx.util.Duration.seconds(0.5), e -> updateLabel.run())
+            );
+            timeline.setCycleCount(javafx.animation.Animation.INDEFINITE);
+            timeline.play();
+            dlg.setOnHidden(e -> timeline.stop());
+            root.getChildren().add(liveStateLabel);
+        }
+
+        // Ghi chú
+        javafx.scene.control.Label note = new javafx.scene.control.Label(
+                "💡 Đèn sẽ áp dụng đồng bộ cho toàn bộ nút giao.");
+        note.setStyle("-fx-text-fill:#5a7090; -fx-font-size:11px;");
+        root.getChildren().add(note);
+
+        // Buttons
+        javafx.scene.control.Button btnApply  = new javafx.scene.control.Button("✔ Áp dụng");
+        javafx.scene.control.Button btnDelete = new javafx.scene.control.Button("🗑 Xóa đèn");
+        javafx.scene.control.Button btnCancel = new javafx.scene.control.Button("Hủy");
+
+        btnApply.setStyle("-fx-background-color:#2a5a2a; -fx-text-fill:white; -fx-font-weight:bold; " +
+                "-fx-cursor:hand; -fx-padding:5 16 5 16; -fx-background-radius:5;");
+        btnDelete.setStyle("-fx-background-color:#5a1a1a; -fx-text-fill:#ff9090; -fx-font-weight:bold; " +
+                "-fx-cursor:hand; -fx-padding:5 16 5 16; -fx-background-radius:5;");
+        btnCancel.setStyle("-fx-background-color:#3a3030; -fx-text-fill:#c8d0e8; " +
+                "-fx-cursor:hand; -fx-padding:5 16 5 16; -fx-background-radius:5;");
+
+        if (existingLight == null) btnDelete.setDisable(true);
+
+        btnApply.setOnAction(ev -> {
+            int g = spinGreen.getValue();
+            int r = spinRed.getValue();
+            int y = spinYellow.getValue();
+            boolean mainAtEnd = btnEnd.isSelected();
+
+            double interX = mainAtEnd ? seg.getEndX() : seg.getStartX();
+            double interY = mainAtEnd ? seg.getEndY() : seg.getStartY();
+            
+            // Backup trạng thái cũ để undo
+            List<com.myteam.traffic.light.SegmentLight> backupLights = new java.util.ArrayList<>(controller.getAllSegmentLights());
+            
+            // Xóa tất cả đèn cũ ở nút giao này để cập nhật lại đồng bộ
+            for (com.myteam.traffic.model.infrastructure.RoadSegment s : data.roads) {
+                if (Math.hypot(s.getEndX() - interX, s.getEndY() - interY) < 1.0) controller.removeSegmentLight(s, true);
+                if (Math.hypot(s.getStartX() - interX, s.getStartY() - interY) < 1.0) controller.removeSegmentLight(s, false);
+            }
+
+            double mainAngle = mainAtEnd ? 
+                Math.atan2(seg.getEndY() - seg.getStartY(), seg.getEndX() - seg.getStartX()) :
+                Math.atan2(seg.getStartY() - seg.getEndY(), seg.getStartX() - seg.getEndX());
+
+            com.myteam.traffic.light.TrafficLightState mainInitialState = cmbInitState.getValue();
+            int mainInitialSec = spinInitSec.getValue();
+
+            // FIX: Để ngã tư không bao giờ bị lệch pha, thời gian ĐỎ bắt buộc phải bằng XANH + VÀNG
+            int syncR = g + y; 
+            
+            // Xử lý logic khởi tạo state cho nhánh đối lập
+            com.myteam.traffic.light.TrafficLightState oppState;
+            int oppSec;
+            if (mainInitialState == com.myteam.traffic.light.TrafficLightState.GREEN) {
+                oppState = com.myteam.traffic.light.TrafficLightState.RED;
+                oppSec = mainInitialSec + y; // Phải đợi hết xanh và vàng của nhánh chính
+            } else if (mainInitialState == com.myteam.traffic.light.TrafficLightState.YELLOW) {
+                oppState = com.myteam.traffic.light.TrafficLightState.RED;
+                oppSec = mainInitialSec;     // Chỉ đợi hết vàng của nhánh chính
+            } else { // Nhánh chính đang ĐỎ
+                if (mainInitialSec > y) {
+                    oppState = com.myteam.traffic.light.TrafficLightState.GREEN;
+                    oppSec = mainInitialSec - y;
+                } else {
+                    oppState = com.myteam.traffic.light.TrafficLightState.YELLOW;
+                    oppSec = mainInitialSec;
+                }
+            }
+
+            for (com.myteam.traffic.model.infrastructure.RoadSegment s : data.roads) {
+                boolean sAtEnd = false;
+                boolean connected = false;
+                if (Math.hypot(s.getEndX() - interX, s.getEndY() - interY) < 1.0) { sAtEnd = true; connected = true; }
+                else if (Math.hypot(s.getStartX() - interX, s.getStartY() - interY) < 1.0) { sAtEnd = false; connected = true; }
+
+                if (connected) {
+                    double sAngle = sAtEnd ? 
+                        Math.atan2(s.getEndY() - s.getStartY(), s.getEndX() - s.getStartX()) :
+                        Math.atan2(s.getStartY() - s.getEndY(), s.getStartX() - s.getEndX());
+
+                    double diff = Math.abs(mainAngle - sAngle);
+                    while (diff > Math.PI) diff -= 2 * Math.PI;
+                    diff = Math.abs(diff);
+
+                    com.myteam.traffic.light.CountdownLight newLight = new com.myteam.traffic.light.CountdownLight(syncR, g, y);
+                    
+                    if (diff <= Math.PI / 4 || Math.abs(diff - Math.PI) <= Math.PI / 4) {
+                        newLight.setInitialState(mainInitialState, mainInitialSec);
+                    } else {
+                        newLight.setInitialState(oppState, oppSec);
+                    }
+                    controller.addSegmentLight(new com.myteam.traffic.light.SegmentLight(s, newLight, sAtEnd));
+                }
+            }
+            
+            // Push undo action
+            undoStack.push(() -> {
+                for (com.myteam.traffic.model.infrastructure.RoadSegment s : data.roads) {
+                    if (Math.hypot(s.getEndX() - interX, s.getEndY() - interY) < 1.0) controller.removeSegmentLight(s, true);
+                    if (Math.hypot(s.getStartX() - interX, s.getStartY() - interY) < 1.0) controller.removeSegmentLight(s, false);
+                }
+                for (com.myteam.traffic.light.SegmentLight sl : backupLights) {
+                    controller.addSegmentLight(sl);
+                }
+            });
+
+            redraw();
+            dlg.close();
+        });
+
+        btnDelete.setOnAction(ev -> {
+            boolean mainAtEnd = btnEnd.isSelected();
+            List<com.myteam.traffic.light.SegmentLight> backupLights = new java.util.ArrayList<>(controller.getAllSegmentLights());
+            
+            controller.removeSegmentLight(seg, mainAtEnd);
+            
+            undoStack.push(() -> {
+                controller.removeSegmentLight(seg, mainAtEnd);
+                for (com.myteam.traffic.light.SegmentLight sl : backupLights) {
+                    controller.addSegmentLight(sl);
+                }
+            });
+            
+            redraw();
+            dlg.close();
+        });
+
+        btnCancel.setOnAction(ev -> dlg.close());
+
+        javafx.scene.layout.HBox btnRow = new javafx.scene.layout.HBox(10, btnApply, btnDelete, btnCancel);
+        btnRow.setAlignment(javafx.geometry.Pos.CENTER_RIGHT);
+        root.getChildren().add(btnRow);
+
+        javafx.scene.Scene scene = new javafx.scene.Scene(root, 380, 420);
+        scene.getStylesheets().add("data:text/css," +
+                ".spinner .increment-arrow-button{-fx-background-color:#3a4560;}" +
+                ".spinner .decrement-arrow-button{-fx-background-color:#3a4560;}" +
+                ".spinner .increment-arrow-button .increment-arrow{-fx-background-color:#c8d0e8;}" +
+                ".spinner .decrement-arrow-button .decrement-arrow{-fx-background-color:#c8d0e8;}" +
+                ".combo-box .list-cell {-fx-text-fill: white;}" +
+                ".combo-box-popup .list-view {-fx-background-color: #2a3550;}" +
+                ".combo-box-popup .list-cell {-fx-text-fill: white;}" +
+                ".combo-box-popup .list-cell:filled:selected, .combo-box-popup .list-cell:filled:hover {-fx-background-color: #3a4560;}");
+        dlg.setScene(scene);
+        dlg.show();
+    }
+
     // ── Marking picker popup ───────────────────────────────────
     private Popup activeMarkingPopup = null;
     private ContextMenu activeMenu = null;
@@ -917,6 +1311,23 @@ public class SimulationView extends Canvas {
         // MOUSE_MOVED — hover highlight (chỉ EDIT mode, không kéo)
         addEventHandler(MouseEvent.MOUSE_MOVED, e -> {
             double wx = toWorldX(e.getX()), wy = toWorldY(e.getY());
+            
+            if (deleteVehicleMode && controller != null) {
+                Vehicle best = null;
+                double bestDist = 15.0; // 15 world units hover radius
+                for (Vehicle v : controller.getVehicles()) {
+                    double dist = Math.hypot(v.getX() - wx, v.getY() - wy);
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        best = v;
+                    }
+                }
+                if (hoveredVehicle != best) {
+                    hoveredVehicle = best;
+                    redraw();
+                }
+            }
+
             if (currentMode == InteractionType.EDIT_MARKINGS) {
                 HoverResult hit = hitTestBoundary(wx, wy);
                 if (hit != hoveredBoundary) { hoveredBoundary = hit; redraw(); }
@@ -980,6 +1391,15 @@ public class SimulationView extends Canvas {
             }
             if (e.getButton() != MouseButton.PRIMARY) return;
             hideActiveMenu();
+
+            if (deleteVehicleMode && hoveredVehicle != null) {
+                if (controller != null) {
+                    controller.removeVehicle(hoveredVehicle);
+                }
+                hoveredVehicle = null;
+                redraw();
+                return;
+            }
 
             // Click trái ra ngoài đường → ẩn popup nếu đang pin
             double wx0 = toWorldX(e.getX()), wy0 = toWorldY(e.getY());

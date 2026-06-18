@@ -35,18 +35,7 @@ public class CountdownLight extends TrafficLight {
         super(redTime, greenTime, yellowTime);
     }
 
-    /**
-     * Mỗi giây: giảm bộ đếm. Khi hết giờ: chuyển trạng thái.
-     */
-
-    @Override
-    public void tick() {
-        if (secondsRemaining > 1) {
-            secondsRemaining--;
-            return;
-        }
-        switchTo(nextState(currentState));
-    }
+    // Logic tick đã được xử lý ở lớp cha TrafficLight
 
     /**
      * Luôn hiển thị số giây còn lại.

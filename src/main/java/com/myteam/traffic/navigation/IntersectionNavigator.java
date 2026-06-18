@@ -123,10 +123,7 @@ public class IntersectionNavigator {
      * @return Heading đã hiệu chỉnh theo hướng di chuyển thực tế của xe
      */
     private double effectiveHeadingDeg(RoadSegment seg, Lane lane, double t, double rawHeadingDeg) {
-        if (lane.getDirection() == Lane.Direction.BACKWARD) {
-            return GeometryUtils.normalizeAngle(rawHeadingDeg + 180.0);
-        }
-        return rawHeadingDeg;
+        return rawHeadingDeg; // getPositionOnLane đã trả về đúng hướng cho cả 2 chiều
     }
 
     public boolean canMerge(Vehicle entering, Intersection intersection, List<Vehicle> allVehicles) {
@@ -153,16 +150,10 @@ public class IntersectionNavigator {
             if (other.getCurrentIntersection() != intersection)
                 continue;
 
-            IntersectionPath otherPath = other.getActivePath();
-            if (otherPath == null)
-                continue;
-
-            // Lấy mẫu trên cả hai đường cong để tìm khoảng cách gần nhất
-            double minDist = findMinDistanceBetweenPaths(futurePath, otherPath);
+            // Lấy mẫu trên đường cong để tìm khoảng cách gần nhất tới vị trí HIỆN TẠI của xe kia
+            double minDist = findMinDistanceToPath(futurePath, other.getPosition());
 
             // Khoảng cách an toàn = nền tảng + nửa chiều dài của CẢ HAI xe.
-            // Xe to (FireTruck/Ambulance) cần khoảng cách lớn hơn để không
-            // "nuốt chửng" xe nhỏ khi hai quỹ đạo đi gần nhau.
             double safeDist = MERGE_SAFE_DISTANCE + enteringHalfLen + vehicleLength(other) / 2.0;
 
             if (minDist < safeDist) {
@@ -235,23 +226,17 @@ public class IntersectionNavigator {
     }
 
     /**
-     * Tính khoảng cách gần nhất giữa hai đường cong Bezier bằng cách lấy mẫu.
+     * Tính khoảng cách gần nhất từ một vị trí đến đường cong Bezier.
      */
-    private double findMinDistanceBetweenPaths(IntersectionPath p1, IntersectionPath p2) {
+    private double findMinDistanceToPath(IntersectionPath p1, Position pos2) {
         double minDist = Double.MAX_VALUE;
-        // Lấy mẫu 20 điểm trên mỗi đường (đủ chính xác cho mô phỏng)
+        // Lấy mẫu 20 điểm trên đường
         for (int i = 0; i <= 20; i++) {
             double t1 = i / 20.0;
             double[] pos1 = p1.sampleAt(t1 * p1.getPathLength());
-            Position pos1Pos = new Position(pos1[0], pos1[1]);
-
-            for (int j = 0; j <= 20; j++) {
-                double t2 = j / 20.0;
-                double[] pos2 = p2.sampleAt(t2 * p2.getPathLength());
-                double d = pos1Pos.distanceTo(new Position(pos2[0], pos2[1]));
-                if (d < minDist)
-                    minDist = d;
-            }
+            double d = pos2.distanceTo(new Position(pos1[0], pos1[1]));
+            if (d < minDist)
+                minDist = d;
         }
         return minDist;
     }

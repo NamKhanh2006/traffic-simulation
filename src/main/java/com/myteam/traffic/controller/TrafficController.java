@@ -5,6 +5,7 @@ import com.myteam.traffic.behavior.DriverBehavior;
 import com.myteam.traffic.context.RoadContext;
 import com.myteam.traffic.light.TrafficLight;
 import com.myteam.traffic.light.TrafficLightState;
+import com.myteam.traffic.light.SegmentLight;
 import com.myteam.traffic.model.geometry.Position;
 import com.myteam.traffic.model.geometry.Direction;
 import com.myteam.traffic.model.infrastructure.*;
@@ -13,6 +14,8 @@ import com.myteam.traffic.navigation.IntersectionNavigator;
 import com.myteam.traffic.navigation.IntersectionPath;
 import com.myteam.traffic.navigation.PathFollower;
 import com.myteam.traffic.rule.TrafficRule;
+import com.myteam.traffic.ui.ExplosionEffect;
+import com.myteam.traffic.ui.SoundManager;
 import com.myteam.traffic.vehicle.*;
 import com.myteam.traffic.vehicle.emergency.Ambulance;
 import com.myteam.traffic.vehicle.emergency.FireTruck;
@@ -25,7 +28,7 @@ public class TrafficController {
 
     // TĂNG LÊN 150.0 ĐỂ QUÉT ĐƯỢC CÁC VÒNG XUYẾN KHỔNG LỒ (Chống lỗi xóa nhầm xe)
     private static final double APPROACHING_THRESHOLD = 200.0;
-    private static final double INITIAL_SPEED = 20.0;
+    private static final double INITIAL_SPEED = 25.0;
     private static final double NORMAL_ACCEL = 8.0;
     private static final double NORMAL_BRAKE = 12.0;
     private static final double HARD_BRAKE = 40.0;
@@ -37,7 +40,14 @@ public class TrafficController {
 
     private final List<Vehicle> vehicles = new CopyOnWriteArrayList<>();
     private final List<TrafficLight> lights = new CopyOnWriteArrayList<>();
+    private final List<SegmentLight> segmentLights = new CopyOnWriteArrayList<>();
     private final List<TrafficRule> globalRules = new CopyOnWriteArrayList<>();
+
+    // Danh sách hiệu ứng nổ đang hoạt động
+    private final List<ExplosionEffect> explosions = new CopyOnWriteArrayList<>();
+
+    // Khoảng cách an toàn tối thiểu giữa 2 xe (center-to-center) — va chạm thực sự
+    private static final double CRASH_DISTANCE = 6.0;
 
     public TrafficController(RoadNetwork network) {
         if (network == null)
@@ -71,9 +81,53 @@ public class TrafficController {
             vehicles.add(v);
     }
 
+    public void removeVehicle(Vehicle v) {
+        if (v != null)
+            vehicles.remove(v);
+    }
+
+    public void clearVehicles() {
+        vehicles.clear();
+        explosions.clear();
+        SoundManager.stopAll(); // Tắt tất cả âm thanh còi khi xóa sạch xe
+    }
+
+    public List<ExplosionEffect> getExplosions() { return Collections.unmodifiableList(explosions); }
+
+
     public void addLight(TrafficLight light) {
         if (light != null)
             lights.add(light);
+    }
+
+    /** Gắn đèn vào một đoạn đường cụ thể. */
+    public void addSegmentLight(SegmentLight sl) {
+        if (sl != null) {
+            // Xóa đèn cũ trên cùng segment (nếu có) trước khi thêm mới
+            segmentLights.removeIf(e -> e.getSegment() == sl.getSegment() && e.isAtEnd() == sl.isAtEnd());
+            segmentLights.add(sl);
+        }
+    }
+
+    /** Xóa đèn khỏi đoạn đường (cả 2 đầu). */
+    public void removeSegmentLight(com.myteam.traffic.model.infrastructure.RoadSegment seg) {
+        segmentLights.removeIf(sl -> sl.getSegment() == seg);
+    }
+
+    /** Xóa đèn khỏi một đầu cụ thể của đoạn đường. */
+    public void removeSegmentLight(com.myteam.traffic.model.infrastructure.RoadSegment seg, boolean atEnd) {
+        segmentLights.removeIf(sl -> sl.getSegment() == seg && sl.isAtEnd() == atEnd);
+    }
+
+    /** Trả về tất cả đèn gắn vào segment cụ thể. */
+    public List<SegmentLight> getSegmentLightsForSegment(com.myteam.traffic.model.infrastructure.RoadSegment seg) {
+        return segmentLights.stream()
+                .filter(sl -> sl.getSegment() == seg)
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    public List<SegmentLight> getAllSegmentLights() {
+        return Collections.unmodifiableList(segmentLights);
     }
 
     public void addRule(TrafficRule rule) {
@@ -86,7 +140,18 @@ public class TrafficController {
     }
 
     public void tick(double deltaTime) {
+        // Cập nhật dying timer và xóa xe đã mờ hết
         vehicles.removeIf(v -> {
+            if (v.isDying()) {
+                v.setDyingTimer(v.getDyingTimer() + deltaTime);
+                return v.getDyingTimer() >= Vehicle.DYING_DURATION;
+            }
+            return false;
+        });
+
+        // Xóa xe ra khỏi đường (tới đầu cuối segment mà không có giao lộ)
+        vehicles.removeIf(v -> {
+            if (v.isDying()) return false; // đã được xử lý ở trên
             if (v.getTravelMode() != TravelMode.ON_SEGMENT)
                 return false;
             if (v.getCurrentLane() == null)
@@ -106,8 +171,16 @@ public class TrafficController {
             return shouldRemove;
         });
 
+        // Cập nhật và xóa explosion đã hết
+        explosions.removeIf(e -> {
+            e.age += deltaTime;
+            return e.isDead();
+        });
+
         for (TrafficLight light : lights)
-            light.tick();
+            light.tick(deltaTime);
+        for (SegmentLight sl : segmentLights)
+            sl.getLight().tick(deltaTime);
         Map<Vehicle, Position> snapshot = takePositionSnapshot();
         Map<Vehicle, Double> pathProgressSnapshot = new HashMap<>();
         Map<Vehicle, Double> speedSnapshot = new HashMap<>();
@@ -116,7 +189,11 @@ public class TrafficController {
             speedSnapshot.put(v, v.getSpeed());
         }
 
+        // Phát hiện va chạm thực sự (overlap nặng) — đánh dấu dying
+        detectRealCollisions();
+
         for (Vehicle v : new ArrayList<>(vehicles)) {
+            if (v.isDying()) continue; // bỏ qua xe đang mờ
             autoSetPlannedExit(v);
             RoadContext ctx = buildContext(v, snapshot, pathProgressSnapshot, speedSnapshot, deltaTime);
             Action proposed = v.getBehavior().decideAction(v, ctx);
@@ -129,6 +206,37 @@ public class TrafficController {
             tryExitIntersection(v);
         }
     }
+
+    /**
+     * Phát hiện va chạm thực sự khi 2 xe chồng lấp nhau nhiều.
+     * Tạo hiệu ứng nổ và đánh dấu để xóa.
+     */
+    private void detectRealCollisions() {
+        List<Vehicle> list = new ArrayList<>(vehicles);
+        for (int i = 0; i < list.size(); i++) {
+            Vehicle a = list.get(i);
+            if (a.isDying()) continue;
+            for (int j = i + 1; j < list.size(); j++) {
+                Vehicle b = list.get(j);
+                if (b.isDying()) continue;
+
+                double dist = a.getPosition().distanceTo(b.getPosition());
+                double minDist = CRASH_DISTANCE;
+
+                if (dist < minDist) {
+                    // Va chạm! Tạo hiệu ứng nổ tại trung điểm
+                    double ex = (a.getX() + b.getX()) / 2.0;
+                    double ey = (a.getY() + b.getY()) / 2.0;
+                    explosions.add(new ExplosionEffect(ex, ey));
+
+                    // Đánh dấu cả 2 xe dying
+                    a.setDying(true);
+                    b.setDying(true);
+                }
+            }
+        }
+    }
+
 
     private void autoSetPlannedExit(Vehicle v) {
         if (v.getTravelMode() != TravelMode.ON_SEGMENT)
@@ -433,6 +541,30 @@ public class TrafficController {
         double newProgress = v.getSegmentProgress() + dp;
         newProgress = Math.max(0, Math.min(1, newProgress));
 
+        // FIX LỖI VƯỢT STOPLINE: Dừng trước stopline (mép ngoài giao lộ)
+        TrafficLightState lightState = getCurrentLightState(v);
+        if (lightState == TrafficLightState.RED || lightState == TrafficLightState.YELLOW) {
+            boolean isForward = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD);
+            // stopMargin = phần progress tương ứng với (bán kính giao lộ + khoảng đệm 5 units)
+            // Xe sẽ dừng ngay sát mép ngoài vòng tròn giao lộ
+            com.myteam.traffic.model.infrastructure.intersection.Intersection upcoming = intersectionNavigator.peekUpcomingIntersection(v);
+            double interRadius = (upcoming != null) ? upcoming.getRenderData().radius : 30.0;
+            double stopMargin = (interRadius + 5.0) / seg.getLength();
+
+            if (isForward) {
+                double stopProgress = 1.0 - stopMargin;
+                // Chỉ clamp nếu xe CHƯA vượt qua stopline
+                if (v.getSegmentProgress() < stopProgress + 0.005) {
+                    newProgress = Math.min(newProgress, stopProgress);
+                }
+            } else {
+                double stopProgress = stopMargin;
+                if (v.getSegmentProgress() > stopProgress - 0.005) {
+                    newProgress = Math.max(newProgress, stopProgress);
+                }
+            }
+        }
+
         // Lấy vị trí dự kiến (bao gồm cả offset khi đang chuyển làn)
         double[] newPose;
         if (v.getLaneChangeProgress() < 1.0 && v.getPreviousLane() != null) {
@@ -466,26 +598,54 @@ public class TrafficController {
         if (path == null)
             return;
 
-        switch (action) {
-            case STOP -> v.setSpeed(Math.max(0, v.getSpeed() - HARD_BRAKE * deltaTime));
-            case SLOW_DOWN -> v.setSpeed(Math.max(5.0, v.getSpeed() - NORMAL_BRAKE * deltaTime));
-            case ACCELERATE -> {
-                if (v.getSpeed() < 10.0)
-                    v.setSpeed(10.0);
-                v.setSpeed(Math.min(v.getMaxSpeed(), v.getSpeed() + NORMAL_ACCEL * deltaTime));
-            }
-            case HONK -> v.tryHonk();
-            default -> {
-                if (v.getSpeed() < 10.0)
-                    v.setSpeed(10.0);
+        // Kiểm tra khoảng cách với xe phía trước trong cùng giao lộ
+        double frontGap = getIntersectionFrontGap(v);
+
+        // Tốc độ mà xe được phép theo
+        double targetSpeed;
+        if (frontGap < 10.0) {
+            // Quá gần xe phía trước — giảm tốc nhưng KHÔNG dừng hẳn
+            targetSpeed = Math.max(8.0, frontGap / 10.0 * v.getMaxSpeed() * 0.5);
+        } else {
+            switch (action) {
+                case STOP, SLOW_DOWN -> targetSpeed = Math.max(10.0, v.getSpeed() - NORMAL_BRAKE * deltaTime);
+                case ACCELERATE -> targetSpeed = Math.min(v.getMaxSpeed(), v.getSpeed() + NORMAL_ACCEL * deltaTime);
+                default -> targetSpeed = Math.max(10.0, v.getSpeed()); // giữ tốc, ít nhất 10
             }
         }
 
+        if (action == Action.HONK) v.tryHonk();
+        v.setSpeed(targetSpeed);
+
         if (v.getSpeed() > 0) {
-            // v.setPathProgress(v.getPathProgress() + v.getSpeed() * deltaTime);
-            // pathFollower.syncPose(v, path, v.getPathProgress());
             pathFollower.advance(v, deltaTime);
         }
+    }
+
+    /**
+     * Tính khoảng cách tới xe phía trước trong cùng giao lộ (theo pathProgress).
+     * Trả về Double.MAX_VALUE nếu không có ai phía trước.
+     */
+    private double getIntersectionFrontGap(Vehicle v) {
+        Intersection inter = v.getCurrentIntersection();
+        double myProgress = v.getPathProgress();
+        double minGap = Double.MAX_VALUE;
+
+        for (Vehicle other : vehicles) {
+            if (other == v) continue;
+            if (other.isDying()) continue;
+            if (other.getCurrentIntersection() != inter) continue;
+
+            double otherProgress = other.getPathProgress();
+            double gap = otherProgress - myProgress; // dương = ở phía trước
+
+            if (gap > 0 && gap < minGap) {
+                // Dùng khoảng cách thực tế để đảm bảo
+                double dist = v.getPosition().distanceTo(other.getPosition());
+                minGap = dist;
+            }
+        }
+        return minGap;
     }
 
     private void tryEnterIntersection(Vehicle v) {
@@ -579,20 +739,45 @@ public class TrafficController {
         }
     }
 
-    // FIX LỖI GIẬT CỤC: Xe chỉ tuân theo đèn giao thông khi đang đứng sát mép giao
-    // lộ
+    // Xe nhận diện đèn dựa trên khoảng cách đến mép ngoài giao lộ (radius), không phải tâm
     private TrafficLightState getCurrentLightState(Vehicle subject) {
-        if (lights.isEmpty() || subject.getCurrentLane() == null)
+        Lane lane = subject.getCurrentLane();
+        RoadSegment seg = subject.getCurrentSegment();
+        if (lane == null || seg == null)
             return TrafficLightState.GREEN;
 
-        boolean nearEnd = (subject.getCurrentLane().getDirection() == Lane.Direction.FORWARD)
-                ? subject.getSegmentProgress() > 0.85
-                : subject.getSegmentProgress() < 0.15;
+        boolean isForward = (lane.getDirection() == Lane.Direction.FORWARD);
+        double targetX = isForward ? seg.getEndX() : seg.getStartX();
+        double targetY = isForward ? seg.getEndY() : seg.getStartY();
+        // distToCenter = khoảng cách đến TÂM giao lộ (= điểm cuối segment)
+        double distToCenter = subject.getPosition().distanceTo(new Position(targetX, targetY));
 
-        if (!nearEnd)
-            return TrafficLightState.GREEN; // Trả về Green nếu đang ở giữa đường
+        // Lấy bán kính giao lộ để tính khoảng cách đến mép ngoài (stopline)
+        com.myteam.traffic.model.infrastructure.intersection.Intersection upcoming = intersectionNavigator.peekUpcomingIntersection(subject);
+        double interRadius = (upcoming != null) ? upcoming.getRenderData().radius : 30.0;
 
-        return lights.get(0).getCurrentState();
+        // distToStopLine = khoảng cách từ xe đến vạch dừng thực tế (được tính bằng interRadius + 5.0)
+        // Nếu âm → xe đã vượt qua vạch dừng rồi → phải tiếp tục đi, không áp dụng đèn nữa
+        double distToStopLine = distToCenter - (interRadius + 5.0);
+
+        // Chỉ áp dụng đèn khi xe đang tiến đến stopline (trong ngưỡng 60 units)
+        // Nếu khoảng cách âm (< -0.1), tức là xe đã chớm qua vạch dừng -> trả về GREEN để đi luôn
+        if (distToStopLine > 60.0 || distToStopLine < -0.1)
+            return TrafficLightState.GREEN;
+
+        // Xe đi FORWARD → đèn ở End; Xe đi BACKWARD → đèn ở Start
+        boolean atEnd = isForward;
+        for (SegmentLight sl : segmentLights) {
+            if (sl.getSegment() == seg && sl.isAtEnd() == atEnd) {
+                return sl.getLight().getCurrentState();
+            }
+        }
+
+        // Fallback: đèn global
+        if (!lights.isEmpty())
+            return lights.get(0).getCurrentState();
+
+        return TrafficLightState.GREEN;
     }
 
     public List<Vehicle> getVehicles() {
@@ -655,43 +840,49 @@ public class TrafficController {
     }
 
     /**
-     * Kiểm tra xem vị trí dự kiến của xe có va chạm với bất kỳ xe nào khác không.
-     * Sử dụng AABB (hình chữ nhật) để phát hiện va chạm chính xác theo kích thước
-     * thực của xe.
-     * 
-     * @param v          Xe đang kiểm tra
-     * @param newX       Tọa độ X dự kiến
-     * @param newY       Tọa độ Y dự kiến
-     * @param newSeg     Segment dự kiến (có thể null nếu không quan tâm)
-     * @param newLaneIdx Làn dự kiến (có thể -1 nếu không quan tâm)
-     * @return true nếu có va chạm với bất kỳ xe nào khác
+     * Kiểm tra va chạm bằng khoảng cách center-to-center với ngưỡng dựa trên kích thước xe.
+     *
+     * Thay thế AABB cũ vốn bỏ qua góc quay của xe.
+     * Thếm xử lý xe đang trong giao lộ (segment = null).
      */
     private boolean wouldCollide(Vehicle v, double newX, double newY, RoadSegment newSeg, int newLaneIdx) {
-        double halfW = v.getWidth() / 2.0;
-        double halfH = v.getHeight() / 2.0;
-        double left = newX - halfW;
-        double right = newX + halfW;
-        double top = newY - halfH;
-        double bottom = newY + halfH;
+        // Nửa chiều dài xe (truc X) — dùng chiều dài vì có thể quay ngang
+        double vHalfLen = v.getWidth() / 2.0;
+        Position newPos = new Position(newX, newY);
 
         for (Vehicle other : vehicles) {
-            if (other == v)
-                continue;
-            // Lọc sơ bộ: chỉ kiểm tra xe cùng segment và gần đủ
-            if (newSeg != null && other.getCurrentSegment() != newSeg)
-                continue;
+            if (other == v) continue;
+            if (other.isDying()) continue;
 
-            double ox = other.getX();
-            double oy = other.getY();
-            double oHalfW = other.getWidth() / 2.0;
-            double oHalfH = other.getHeight() / 2.0;
-            double oLeft = ox - oHalfW;
-            double oRight = ox + oHalfW;
-            double oTop = oy - oHalfH;
-            double oBottom = oy + oHalfH;
+            // Chỉ kiểm tra xe cùng segment hoặc cùng giao lộ
+            boolean sameSeg = (newSeg != null) && (other.getCurrentSegment() == newSeg);
+            boolean sameInter = (newSeg == null) && (v.getCurrentIntersection() != null)
+                    && (v.getCurrentIntersection() == other.getCurrentIntersection());
 
-            // Kiểm tra AABB có chồng lấn không
-            if (right > oLeft && left < oRight && bottom > oTop && top < oBottom) {
+            if (!sameSeg && !sameInter) continue;
+
+            // Kiểm tra xe trên cùng segment nhưng khác hướng thì bỏ qua
+            if (sameSeg && other.getCurrentLane() != null && v.getCurrentLane() != null) {
+                if (other.getCurrentLane().getDirection() != v.getCurrentLane().getDirection()) continue;
+                // Chỉ kiểm tra xe cùng làn
+                if (other.getCurrentLane().getIndex() != newLaneIdx) continue;
+
+                // FIX DEADLOCK: Bỏ qua xe ở PHÍA SAU!
+                // Nếu không bỏ qua, xe đi trước sẽ phanh lại vì xe đi sau quá gần -> kẹt cứng cả hai!
+                double myProg = v.getSegmentProgress();
+                double otherProg = other.getSegmentProgress();
+                if (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD) {
+                    if (otherProg < myProg) continue; // xe kia ở sau
+                } else {
+                    if (otherProg > myProg) continue; // xe kia ở sau (do BACKWARD đi từ 1->0)
+                }
+            }
+
+            double otherHalfLen = other.getWidth() / 2.0;
+            double safeGap = vHalfLen + otherHalfLen + 2.0; // +2 buffer
+
+            double dist = newPos.distanceTo(other.getPosition());
+            if (dist < safeGap) {
                 return true;
             }
         }

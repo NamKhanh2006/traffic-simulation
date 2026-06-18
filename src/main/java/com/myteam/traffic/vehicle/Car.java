@@ -10,7 +10,7 @@ public class Car extends Vehicle {
         super(position, direction, behavior);
         this.setWidth(4.0);
         this.setHeight(2.0);
-        this.setMaxSpeed(15.0);
+        this.setMaxSpeed(22.0);
         this.setEmergency(false);
         this.setType(VehicleType.CAR);
     }

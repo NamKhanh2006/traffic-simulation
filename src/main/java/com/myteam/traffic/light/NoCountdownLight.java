@@ -33,18 +33,7 @@ public class NoCountdownLight extends TrafficLight {
         super(redTime, greenTime, yellowTime);
     }
 
-    /**
-     * Cùng logic đếm giờ như {@link CountdownLight} —
-     * đợi hết thời gian rồi mới chuyển, không đổi ngay mỗi tick.
-     */
-    @Override
-    public void tick() {
-        if (secondsRemaining > 1) {
-            secondsRemaining--;
-            return;
-        }
-        switchTo(nextState(currentState));
-    }
+    // Logic tick đã được xử lý ở lớp cha TrafficLight
 
     /**
      * Không hiển thị số giây — renderer bỏ qua, chỉ vẽ màu đèn.

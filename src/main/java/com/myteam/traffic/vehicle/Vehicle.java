@@ -33,6 +33,11 @@ public abstract class Vehicle {
     protected double laneChangeProgress = 1.0;
     protected Lane previousLane = null;
 
+    // Hiệu ứng mờ dần khi va chạm
+    private boolean dying = false;
+    private double dyingTimer = 0.0;  // 0 → DYING_DURATION: mờ dần
+    public static final double DYING_DURATION = 0.7; // giây
+
     public Vehicle(Position position, Direction direction, DriverBehavior behavior) {
         this.position = position;
         this.direction = direction;
@@ -231,4 +236,15 @@ public abstract class Vehicle {
     public double getMaxAcceleration() { return 2.0; }
     public double getComfortableDeceleration() { return 3.0; }
     public void slowDown(double delta) { setSpeed(Math.max(0, getSpeed() - delta)); }
+
+    // --- Dying state ---
+    public boolean isDying()             { return dying; }
+    public void   setDying(boolean d)   { this.dying = d; }
+    public double getDyingTimer()        { return dyingTimer; }
+    public void   setDyingTimer(double t){ this.dyingTimer = t; }
+    /** Alpha [0..1] khi đang mờ dần, 1.0 nếu bình thường. */
+    public double getDyingAlpha() {
+        if (!dying) return 1.0;
+        return Math.max(0.0, 1.0 - dyingTimer / DYING_DURATION);
+    }
 }

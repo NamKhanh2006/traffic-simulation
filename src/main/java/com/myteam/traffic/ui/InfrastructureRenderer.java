@@ -355,6 +355,10 @@ public class InfrastructureRenderer {
             drawCenterLine(gc, seg, startOffsetX, startOffsetY, endOffsetX, endOffsetY, ang, scale);
             drawEdgeLines(gc, seg, sx, sy, ex, ey, ang, offS, offE, scale);
             drawLaneDividers(gc, seg, startOffsetX, startOffsetY, endOffsetX, endOffsetY, ang, scale);
+
+            // ── STOP LINES: vẽ vạch dừng xe tại đầu đường tiếp giáp giao lộ ─
+            if (offS > 2) drawStopLine(gc, startOffsetX, startOffsetY, ang, seg, scale, false);
+            if (offE > 2) drawStopLine(gc, endOffsetX, endOffsetY, ang, seg, scale, true);
         }
         gc.restore();
     }
@@ -479,8 +483,30 @@ public class InfrastructureRenderer {
         // Không vẽ viền mép đường — vùng nút giao tròn đã bo góc sạch
     }
 
-    private void drawStopLine(GraphicsContext gc, double px, double py, double roadAngle, RoadSegment seg, double scale) {
-        // Không vẽ vạch dừng xe — giao diện tối giản như ảnh tham chiếu
+    private void drawStopLine(GraphicsContext gc, double px, double py, double roadAngle, RoadSegment seg, double scale, boolean isEnd) {
+        if (scale < 0.25) return; // không vẽ khi quá nhỏ
+        double roadW = roadWidth(seg, scale);
+        
+        // Xe đi bên TRÁI đường:
+        // isEnd (xe chạy tới end): bên trái là roadAngle - 90 độ
+        // !isEnd (xe chạy tới start): bên trái là roadAngle + 90 độ
+        double sideAngle = isEnd ? (roadAngle - Math.PI / 2) : (roadAngle + Math.PI / 2);
+        double perpX = Math.cos(sideAngle);
+        double perpY = Math.sin(sideAngle);
+
+        double gap = 2.5 * scale; // cách vạch giữa một chút
+
+        double x1 = px + perpX * gap;
+        double y1 = py + perpY * gap;
+        double x2 = px + perpX * (roadW / 2);
+        double y2 = py + perpY * (roadW / 2);
+
+        gc.save();
+        gc.setStroke(Color.web("#ffffff", 0.95));
+        gc.setLineWidth(Math.max(1.5, 3.0 * scale));
+        gc.setLineDashes(null);
+        gc.strokeLine(x1, y1, x2, y2);
+        gc.restore();
     }
 
     private void drawRampCenterLine(GraphicsContext gc, HighwayRampSegment ramp, double scale) {

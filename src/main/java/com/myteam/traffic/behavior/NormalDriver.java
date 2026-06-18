@@ -97,7 +97,7 @@ public class NormalDriver implements DriverBehavior {
             Position otherPos = context.getSnapshotPosition(other).orElse(other.getPosition());
             double dist = myPos.distanceTo(otherPos);
 
-            if (dist < 45.0) { // Kiểm tra ngưỡng an toàn
+            if (dist < 18.0) { // Chỉ dừng khi thực sự gần
                 return Action.STOP;
             }
         }

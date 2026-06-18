@@ -33,7 +33,9 @@ public class VehicleRenderer {
         double l = dims[0]; // Chiều dài
         double w = dims[1]; // Chiều rộng
 
-        double alpha = (spawner != null) ? spawner.getSpawnAlpha(vehicle) : 1.0;
+        double spawnAlpha = (spawner != null) ? spawner.getSpawnAlpha(vehicle) : 1.0;
+        double dyingAlpha = vehicle.getDyingAlpha();
+        double alpha = spawnAlpha * dyingAlpha;
 
         gc.save();
         gc.setGlobalAlpha(alpha);
