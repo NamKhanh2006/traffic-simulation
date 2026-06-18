@@ -1782,6 +1782,37 @@ public class SimulationView extends Canvas {
             }
         }
 
+        // ── Bước 1.5: Thu thập hit points trực tiếp từ các Intersection ───
+        // Bắt các trường hợp đường vẽ đi xuyên qua tâm giao lộ hoặc xuất phát từ tâm
+        // mà hàm getIntersectionPointStrict không thể bắt được vì u = 0 hoặc u = 1.
+        for (Intersection inter : network.getIntersections()) {
+            double cx = inter.getCenterX();
+            double cy = inter.getCenterY();
+            
+            // Tính t trên đoạn thẳng x1,y1 -> x2,y2
+            double l2 = (x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2);
+            double t = (l2 == 0) ? 0 : Math.max(0, Math.min(1, ((cx - x1) * (x2 - x1) + (cy - y1) * (y2 - y1)) / l2));
+            double projX = x1 + t * (x2 - x1);
+            double projY = y1 + t * (y2 - y1);
+            
+            if (Math.hypot(cx - projX, cy - projY) < 10.0) {
+                // Có hit với intersection này
+                final double hitX = cx, hitY = cy;
+                HitGroup tgt = hits.stream()
+                        .filter(g -> isSamePoint(g.x, g.y, hitX, hitY))
+                        .findFirst().orElse(null);
+                if (tgt == null) {
+                    tgt = new HitGroup(cx, cy, Math.hypot(cx - x1, cy - y1));
+                    tgt.isExistingIntersection = true;
+                    tgt.existingIntersection = inter;
+                    hits.add(tgt);
+                } else {
+                    tgt.isExistingIntersection = true;
+                    tgt.existingIntersection = inter;
+                }
+            }
+        }
+
         if (hits.isEmpty()) {
             network.addSegment(new RoadSegment(x1, y1, x2, y2, newLanes));
             return;

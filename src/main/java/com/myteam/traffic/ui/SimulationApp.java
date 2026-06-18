@@ -121,7 +121,6 @@ public class SimulationApp extends Application {
         ToggleButton btnModePan    = modeBtn("✋", "Di chuyển",  "Kéo và xoay bản đồ");
         ToggleButton btnModeDraw   = modeBtn("🛣️", "Vẽ đường",   "Vẽ đoạn đường mới");
         ToggleButton btnModeEdit   = modeBtn("✏️", "Sửa vạch",   "Hover vạch kẻ → menu chọn loại");
-        ToggleButton btnModeInter  = modeBtn("🔀", "Giao lộ",    "Click để đặt nút giao thông");
         ToggleButton btnModeDelete = modeBtn("🗑️", "Xóa",        "Hover vào đường/nút giao → click để xóa");
         ToggleButton btnModeDelLight = modeBtn("💡", "Xóa đèn", "Hover vào đèn sáng lên → click để xóa");
         ToggleButton btnModeSim    = modeBtn("🚗", "Mô phỏng",   "Chạy mô phỏng & spawn xe theo tỷ lệ");
@@ -143,11 +142,11 @@ public class SimulationApp extends Application {
         });
 
         ToggleGroup modeGroup = new ToggleGroup();
-        for (ToggleButton b : new ToggleButton[]{btnModePan, btnModeDraw, btnModeEdit, btnModeInter, btnModeDelete, btnModeDelLight, btnModeSim})
+        for (ToggleButton b : new ToggleButton[]{btnModePan, btnModeDraw, btnModeEdit, btnModeDelete, btnModeDelLight, btnModeSim})
             b.setToggleGroup(modeGroup);
         btnModePan.setSelected(true);
 
-        HBox modeBox = new HBox(4, btnModePan, btnModeDraw, btnModeEdit, btnModeInter, btnModeDelete, btnModeDelLight, btnModeSim);
+        HBox modeBox = new HBox(4, btnModePan, btnModeDraw, btnModeEdit, btnModeDelete, btnModeDelLight, btnModeSim);
         modeBox.setAlignment(Pos.CENTER_LEFT);
 
         Button btnZoomIn  = actionBtn("🔍+", "Phóng to (Scroll)");
@@ -197,14 +196,13 @@ public class SimulationApp extends Application {
         HBox ctxPan    = buildCtxPan();
         HBox ctxDraw   = buildCtxDraw(view);
         HBox ctxEdit   = buildCtxEdit();
-        HBox ctxInter  = buildCtxIntersection(view);
         HBox ctxDelete = buildCtxDelete();
         HBox ctxDelLight = buildCtxDelLight();
         HBox ctxSim    = buildCtxSimulation(view, spawner);
 
-        StackPane ctxStack = new StackPane(ctxPan, ctxDraw, ctxEdit, ctxInter, ctxDelete, ctxDelLight, ctxSim);
+        StackPane ctxStack = new StackPane(ctxPan, ctxDraw, ctxEdit, ctxDelete, ctxDelLight, ctxSim);
         ctxPan.setVisible(true);
-        for (HBox h : new HBox[]{ctxDraw, ctxEdit, ctxInter, ctxDelete, ctxDelLight, ctxSim}) {
+        for (HBox h : new HBox[]{ctxDraw, ctxEdit, ctxDelete, ctxDelLight, ctxSim}) {
             h.setVisible(false);
             StackPane.setAlignment(h, Pos.CENTER_LEFT);
         }
@@ -217,14 +215,12 @@ public class SimulationApp extends Application {
             ctxPan   .setVisible(nw == btnModePan);
             ctxDraw  .setVisible(nw == btnModeDraw);
             ctxEdit  .setVisible(nw == btnModeEdit);
-            ctxInter .setVisible(nw == btnModeInter);
             ctxDelete.setVisible(nw == btnModeDelete);
             ctxDelLight.setVisible(nw == btnModeDelLight);
             ctxSim   .setVisible(nw == btnModeSim);
             if (nw == btnModePan)    view.setInteractionType(SimulationView.InteractionType.PAN);
             if (nw == btnModeDraw)   view.setInteractionType(SimulationView.InteractionType.DRAW_ROAD);
             if (nw == btnModeEdit)   view.setInteractionType(SimulationView.InteractionType.EDIT_MARKINGS);
-            if (nw == btnModeInter)  view.setInteractionType(SimulationView.InteractionType.PLACE_INTERSECTION);
             if (nw == btnModeDelete) view.setInteractionType(SimulationView.InteractionType.DELETE);
             if (nw == btnModeDelLight) view.setInteractionType(SimulationView.InteractionType.DELETE_LIGHT);
             if (nw == btnModeSim)    view.setInteractionType(SimulationView.InteractionType.PAN);
@@ -611,101 +607,6 @@ public class SimulationApp extends Application {
         return hbox(tip);
     }
 
-    private HBox buildCtxIntersection(SimulationView view) {
-        // ── Loại giao lộ ──
-        Label lblType = new Label("Loại:");
-        lblType.setStyle("-fx-text-fill:#c8d0e8; -fx-font-size:12px;");
-        ComboBox<String[]> typeBox = new ComboBox<>();
-        typeBox.getItems().addAll(
-                new String[]{"🔺 Ngã ba",         "3"},
-                new String[]{"✚ Ngã tư",          "4"},
-                new String[]{"⭐ Ngã năm",         "5"}
-        );
-        typeBox.setValue(new String[]{"✚ Ngã tư", "4"});
-        typeBox.setPrefWidth(168);
-        typeBox.setStyle("-fx-background-color:#2a3550;");
-        typeBox.setConverter(new javafx.util.StringConverter<>() {
-            @Override public String toString(String[] o) { return o == null ? "" : o[0]; }
-            @Override public String[] fromString(String s) { return null; }
-        });
-        typeBox.setButtonCell(new javafx.scene.control.ListCell<>() {
-            @Override protected void updateItem(String[] item, boolean empty) {
-                super.updateItem(item, empty);
-                setText(empty || item == null ? "" : item[0]);
-                setStyle("-fx-text-fill:white; -fx-font-weight:bold; -fx-font-size:12px; -fx-background-color:transparent;");
-            }
-        });
-        typeBox.setCellFactory(lv -> new javafx.scene.control.ListCell<>() {
-            @Override protected void updateItem(String[] item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) { setText(""); return; }
-                setText(item[0]);
-                setStyle("-fx-text-fill:#c8d0e8; -fx-font-size:12px; -fx-background-color:transparent;");
-            }
-        });
-        view.setIntersectionTypeToPlace("4");
-
-        // ── Bán kính vòng xuyến: Slider + TextField nhập tay ──
-        Label lblR = new Label("Bán kính:");
-        lblR.setStyle("-fx-text-fill:#c8d0e8; -fx-font-size:12px;");
-        Slider sliderR = new Slider(30, 250, 60);
-        sliderR.setPrefWidth(90);
-        sliderR.setMajorTickUnit(30);
-        sliderR.setSnapToTicks(false);
-        TextField tfR = new TextField("60");
-        tfR.setPrefWidth(48);
-        tfR.setStyle("-fx-background-color:#2a3550; -fx-text-fill:#e8d44d; -fx-font-size:12px; -fx-border-color:#3a4560;");
-        Label lblRUnit = new Label("u");
-        lblRUnit.setStyle("-fx-text-fill:#c8d0e8; -fx-font-size:11px;");
-
-        // Slider → TextField
-        sliderR.valueProperty().addListener((ob, ov, nv) -> {
-            roundaboutRadius = Math.round(nv.doubleValue());
-            tfR.setText(String.valueOf((int)roundaboutRadius));
-            view.setRoundaboutRadius(roundaboutRadius);
-        });
-        // TextField → Slider
-        tfR.setOnAction(e -> {
-            try {
-                double v = Math.max(30, Math.min(250, Double.parseDouble(tfR.getText().trim())));
-                roundaboutRadius = v;
-                sliderR.setValue(v);
-                tfR.setText(String.valueOf((int)v));
-                view.setRoundaboutRadius(v);
-            } catch (NumberFormatException ex) { tfR.setText(String.valueOf((int)roundaboutRadius)); }
-        });
-        tfR.focusedProperty().addListener((ob, ov, focused) -> { if (!focused) tfR.getOnAction().handle(null); });
-
-        // Hiện/ẩn slider bán kính tùy loại — handled in tip block below
-        for (javafx.scene.Node n : new javafx.scene.Node[]{lblR, sliderR, tfR, lblRUnit})
-            n.setVisible(false);
-
-        Label tip = new Label("💡 Click để đặt tâm  •  Ctrl+Z = undo");
-        tip.setStyle("-fx-text-fill:#4a6080; -fx-font-size:11px;");
-
-        // ── Số nhánh vòng xuyến ──
-        Label lblBranch = new Label("Nhánh:");
-        lblBranch.setStyle("-fx-text-fill:#c8d0e8; -fx-font-size:12px;");
-        Spinner<Integer> spinBranch = new Spinner<>(3, 8, 4);
-        spinBranch.setPrefWidth(64);
-        spinBranch.setStyle("-fx-background-color:#2a3550; -fx-background-radius:4; -fx-border-color:#3a4560;");
-        spinBranch.getEditor().setStyle("-fx-background-color:#2a3550; -fx-text-fill:#c8d0e8; -fx-font-size:12px; -fx-alignment:center;");
-        spinBranch.valueProperty().addListener((ob, ov, nv) -> { if (nv != null) view.setRoundaboutBranches(nv); });
-        lblBranch.setVisible(false); spinBranch.setVisible(false);
-
-        typeBox.setOnAction(e -> {
-            String[] sel = typeBox.getValue();
-            if (sel == null) return;
-            view.setIntersectionTypeToPlace(sel[1]);
-            boolean isRound = sel[1].startsWith("ROUNDABOUT");
-            for (javafx.scene.Node n : new javafx.scene.Node[]{lblR, sliderR, tfR, lblRUnit, lblBranch, spinBranch})
-                n.setVisible(isRound);
-        });
-
-        HBox box = hbox(lblType, typeBox, vsep(), lblBranch, spinBranch, vsep(), lblR, sliderR, tfR, lblRUnit, vsep(), tip);
-        box.setSpacing(8);
-        return box;
-    }
 
     // ========================================================
     // WIDGET HELPERS
