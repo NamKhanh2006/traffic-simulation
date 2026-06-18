@@ -2153,11 +2153,34 @@ public class SimulationView extends Canvas {
         if (controller != null) {
             for (Intersection inter : network.getIntersections()) {
                 if (inter.getConnections().size() >= 3) {
-                    com.myteam.traffic.light.TrafficLight tLight = new com.myteam.traffic.light.CountdownLight(20, 20, 3);
-                    controller.addLight(tLight);
+                    ConnectionPoint mainCp = inter.getConnections().get(0);
+                    com.myteam.traffic.model.infrastructure.RoadSegment mainSeg = mainCp.getSegment();
+                    boolean mainSAtEnd = (mainCp.getEnd() == ConnectionPoint.End.END);
+                    double mainAngle = mainSAtEnd ? 
+                        Math.atan2(mainSeg.getEndY() - mainSeg.getStartY(), mainSeg.getEndX() - mainSeg.getStartX()) :
+                        Math.atan2(mainSeg.getStartY() - mainSeg.getEndY(), mainSeg.getStartX() - mainSeg.getEndX());
+
                     for (ConnectionPoint cp : inter.getConnections()) {
                         com.myteam.traffic.model.infrastructure.RoadSegment s = cp.getSegment();
                         boolean sAtEnd = (cp.getEnd() == ConnectionPoint.End.END);
+                        
+                        double sAngle = sAtEnd ? 
+                            Math.atan2(s.getEndY() - s.getStartY(), s.getEndX() - s.getStartX()) :
+                            Math.atan2(s.getStartY() - s.getEndY(), s.getStartX() - s.getEndX());
+
+                        double diff = Math.abs(mainAngle - sAngle);
+                        while (diff > Math.PI) diff -= 2 * Math.PI;
+                        diff = Math.abs(diff);
+
+                        // Đồng bộ đèn: Đỏ = Xanh + Vàng (23 = 20 + 3)
+                        com.myteam.traffic.light.TrafficLight tLight = new com.myteam.traffic.light.CountdownLight(23, 20, 3);
+                        
+                        if (diff <= Math.PI / 4 || Math.abs(diff - Math.PI) <= Math.PI / 4) {
+                            tLight.setInitialState(com.myteam.traffic.light.TrafficLightState.GREEN, 20);
+                        } else {
+                            tLight.setInitialState(com.myteam.traffic.light.TrafficLightState.RED, 23);
+                        }
+                        
                         controller.addSegmentLight(new com.myteam.traffic.light.SegmentLight(s, tLight, sAtEnd));
                     }
                 }
