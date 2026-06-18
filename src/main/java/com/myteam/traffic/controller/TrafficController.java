@@ -108,6 +108,11 @@ public class TrafficController {
         SoundManager.stopAll(); // Tắt tất cả âm thanh còi khi xóa sạch xe
     }
 
+    public void clearLights() {
+        lights.clear();
+        segmentLights.clear();
+    }
+
     public List<ExplosionEffect> getExplosions() {
         return Collections.unmodifiableList(explosions);
     }

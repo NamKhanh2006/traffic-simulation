@@ -1857,14 +1857,46 @@ public class SimulationView extends Canvas {
                 for (RoadSegment crossed : group.crossedSegments) {
                     boolean atStart = isSamePoint(crossed.getStartX(), crossed.getStartY(), group.x, group.y);
                     boolean atEnd   = isSamePoint(crossed.getEndX(),   crossed.getEndY(),   group.x, group.y);
-                    if (atStart || atEnd) continue;
+                    if (atStart) {
+                        workNode.connectRoad(crossed, ConnectionPoint.End.START);
+                        continue;
+                    }
+                    if (atEnd) {
+                        workNode.connectRoad(crossed, ConnectionPoint.End.END);
+                        continue;
+                    }
                     if (!network.getSegments().contains(crossed)) continue;
+
+                    // TRƯỚC KHI XÓA: Lưu lại danh sách các giao lộ đang gắn với 'crossed'
+                    class SavedConnection {
+                        Intersection inter;
+                        ConnectionPoint.End end;
+                        SavedConnection(Intersection i, ConnectionPoint.End e) { inter = i; end = e; }
+                    }
+                    List<SavedConnection> saved = new ArrayList<>();
+                    for (Intersection inter : network.getIntersections()) {
+                        for (ConnectionPoint cp : inter.getConnections()) {
+                            if (cp.getSegment() == crossed) {
+                                saved.add(new SavedConnection(inter, cp.getEnd()));
+                            }
+                        }
+                    }
 
                     network.removeSegment(crossed);
                     RoadSegment p1 = new RoadSegment(crossed.getStartX(), crossed.getStartY(), group.x, group.y, crossed.getLanes());
                     RoadSegment p2 = new RoadSegment(group.x, group.y, crossed.getEndX(), crossed.getEndY(), crossed.getLanes());
                     network.addSegment(p1);
                     network.addSegment(p2);
+                    
+                    // PHỤC HỒI KẾT NỐI
+                    for (SavedConnection sc : saved) {
+                        if (sc.end == ConnectionPoint.End.START) {
+                            sc.inter.connectRoad(p1, ConnectionPoint.End.START);
+                        } else {
+                            sc.inter.connectRoad(p2, ConnectionPoint.End.END);
+                        }
+                    }
+
                     workNode.connectRoad(p1, ConnectionPoint.End.END);
                     workNode.connectRoad(p2, ConnectionPoint.End.START);
                 }
@@ -2079,6 +2111,60 @@ public class SimulationView extends Canvas {
             case "ROUNDABOUT_L" -> 100;
             default -> 48;
         };
+    }
+
+    /**
+     * Dựng sẵn một mạng lưới đường phức tạp gồm 9 giao lộ để demo nhanh.
+     */
+    public void loadDemoNetwork() {
+        network.clear();
+        if (controller != null) {
+            controller.clearVehicles();
+            controller.clearLights();
+        }
+        
+        // Tạo sẵn 9 nút giao để "đón lõng" các đường vẽ, giúp chúng bắt dính hoàn hảo tại các điểm mút và tạo bo góc chữ L, chữ T
+        // Góc (2 ngã):
+        network.addIntersection(new com.myteam.traffic.model.infrastructure.intersection.GeneralIntersection(200, 200, 2));
+        network.addIntersection(new com.myteam.traffic.model.infrastructure.intersection.GeneralIntersection(800, 200, 2));
+        network.addIntersection(new com.myteam.traffic.model.infrastructure.intersection.GeneralIntersection(200, 800, 2));
+        network.addIntersection(new com.myteam.traffic.model.infrastructure.intersection.GeneralIntersection(800, 800, 2));
+        
+        // Biên (3 ngã):
+        network.addIntersection(new com.myteam.traffic.model.infrastructure.intersection.GeneralIntersection(500, 200, 3));
+        network.addIntersection(new com.myteam.traffic.model.infrastructure.intersection.GeneralIntersection(200, 500, 3));
+        network.addIntersection(new com.myteam.traffic.model.infrastructure.intersection.GeneralIntersection(800, 500, 3));
+        network.addIntersection(new com.myteam.traffic.model.infrastructure.intersection.GeneralIntersection(500, 800, 3));
+        
+        // Trung tâm (4 ngã):
+        network.addIntersection(new com.myteam.traffic.model.infrastructure.intersection.GeneralIntersection(500, 500, 4));
+
+        // 1. Vẽ các trục ngang (chỉ vẽ đúng chiều dài thực tế để không dư nét tạo thành ngã tư)
+        commitWithIntersections(200, 200, 800, 200, SimulationApp.createLanes(2)); // Ngang trên
+        commitWithIntersections(200, 500, 800, 500, SimulationApp.createLanes(2)); // Ngang giữa
+        commitWithIntersections(200, 800, 800, 800, SimulationApp.createLanes(2)); // Ngang dưới
+
+        // 2. Vẽ các trục dọc
+        commitWithIntersections(200, 200, 200, 800, SimulationApp.createLanes(2)); // Dọc trái
+        commitWithIntersections(500, 200, 500, 800, SimulationApp.createLanes(2)); // Dọc giữa
+        commitWithIntersections(800, 200, 800, 800, SimulationApp.createLanes(2)); // Dọc phải
+
+        // 3. Thêm tự động đèn giao thông (có đếm ngược) cho các giao lộ từ ngã 3 trở lên
+        if (controller != null) {
+            for (Intersection inter : network.getIntersections()) {
+                if (inter.getConnections().size() >= 3) {
+                    com.myteam.traffic.light.TrafficLight tLight = new com.myteam.traffic.light.CountdownLight(20, 20, 3);
+                    controller.addLight(tLight);
+                    for (ConnectionPoint cp : inter.getConnections()) {
+                        com.myteam.traffic.model.infrastructure.RoadSegment s = cp.getSegment();
+                        boolean sAtEnd = (cp.getEnd() == ConnectionPoint.End.END);
+                        controller.addSegmentLight(new com.myteam.traffic.light.SegmentLight(s, tLight, sAtEnd));
+                    }
+                }
+            }
+        }
+        
+        updateRenderData();
     }
 
     public void setController(com.myteam.traffic.controller.TrafficController controller) {

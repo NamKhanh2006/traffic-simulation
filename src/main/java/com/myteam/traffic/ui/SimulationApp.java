@@ -165,6 +165,14 @@ public class SimulationApp extends Application {
             view.redraw();
         });
 
+        Button btnDemoNet = actionBtn("🌐 Mạng lưới demo", "Tạo sẵn mạng lưới 9 giao lộ");
+        btnDemoNet.setOnAction(e -> {
+            view.saveSnapshot();
+            view.loadDemoNetwork();
+            if (view.getController() != null) view.getController().clearVehicles();
+            view.redraw();
+        });
+
         CheckBox cbGrid   = styledCb("Lưới",           true,  e -> view.setShowGrid  (((CheckBox)e.getSource()).isSelected()));
         CheckBox cbLabels = styledCb("Nhãn đường",     true,  e -> view.setShowLabels(((CheckBox)e.getSource()).isSelected()));
 
@@ -185,7 +193,7 @@ public class SimulationApp extends Application {
 
         HBox topBar = new HBox(10,
                 modeBox,
-                vsep(), new HBox(4, btnZoomIn, btnZoomOut, btnUndo, btnClear),
+                vsep(), new HBox(4, btnZoomIn, btnZoomOut, btnUndo, btnClear, btnDemoNet),
                 vsep(), new HBox(10, btnGraphicMode, cbGrid, cbLabels),
                 vsep(), hint);
         topBar.setAlignment(Pos.CENTER_LEFT);

@@ -50,8 +50,8 @@ public class GeneralIntersection extends Intersection {
      */
     public GeneralIntersection(double centerX, double centerY, int branchCount, String customName) {
         super(centerX, centerY);
-        if (branchCount < 3) {
-            throw new IllegalArgumentException("Giao lộ phải có ít nhất 3 nhánh.");
+        if (branchCount < 2) {
+            throw new IllegalArgumentException("Giao lộ (hoặc khúc cua) phải có ít nhất 2 nhánh.");
         }
         this.branchCount = branchCount;
         this.customName = customName;
