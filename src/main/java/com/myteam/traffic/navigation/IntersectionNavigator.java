@@ -82,6 +82,7 @@ public class IntersectionNavigator {
         
         // Lấy tọa độ tâm LÀN VÀO (ở mép giao lộ)
         double inMargin = interRadius / inSeg.getLength();
+        inMargin = Math.min(0.45, inMargin);
         double inT = (inLane.getDirection() == Lane.Direction.FORWARD) ? 1.0 - inMargin : inMargin;
         double[] inPose = inSeg.getPositionOnLane(inLane.getIndex(), inT);
         double startX = inPose[0];
@@ -91,6 +92,7 @@ public class IntersectionNavigator {
 
         // Lấy tọa độ tâm LÀN RA (ở mép giao lộ)
         double outMargin = interRadius / outSeg.getLength();
+        outMargin = Math.min(0.45, outMargin);
         double outT = (exitCP.getEnd() == ConnectionPoint.End.START) ? outMargin : 1.0 - outMargin;
         double[] outPose = outSeg.getPositionOnLane(outLane.getIndex(), outT);
         double endX = outPose[0];
@@ -226,6 +228,7 @@ public class IntersectionNavigator {
         // --- Tính điểm vào (tâm làn hiện tại tại đầu mút segment, mép giao lộ) ---
         double interRadius = intersection.getRenderData() != null ? intersection.getRenderData().radius : 30.0;
         double inMargin = interRadius / segment.getLength();
+        inMargin = Math.min(0.45, inMargin);
         double inT = (lane.getDirection() == Lane.Direction.FORWARD) ? 1.0 - inMargin : inMargin;
         double[] inPose = segment.getPositionOnLane(lane.getIndex(), inT);
         double startX = inPose[0];
@@ -234,6 +237,7 @@ public class IntersectionNavigator {
 
         // --- Tính điểm ra (tâm làn trên segment ra, mép giao lộ) ---
         double outMargin = interRadius / outSeg.getLength();
+        outMargin = Math.min(0.45, outMargin);
         double outT = (exitCP.getEnd() == ConnectionPoint.End.START) ? outMargin : 1.0 - outMargin;
         double[] outPose = outSeg.getPositionOnLane(outLane.getIndex(), outT);
         double endX = outPose[0];
@@ -273,6 +277,7 @@ public class IntersectionNavigator {
 
         double interRadius = path.getIntersection().getRenderData() != null ? path.getIntersection().getRenderData().radius : 30.0;
         double outMargin = interRadius / segment.getLength();
+        outMargin = Math.min(0.45, outMargin);
         double t = (exit.getEnd() == ConnectionPoint.End.START) ? outMargin : 1.0 - outMargin;
         vehicle.exitToSegment(segment, lane, t);
     }

@@ -123,6 +123,7 @@ public class SimulationApp extends Application {
         ToggleButton btnModeEdit   = modeBtn("✏️", "Sửa vạch",   "Hover vạch kẻ → menu chọn loại");
         ToggleButton btnModeInter  = modeBtn("🔀", "Giao lộ",    "Click để đặt nút giao thông");
         ToggleButton btnModeDelete = modeBtn("🗑️", "Xóa",        "Hover vào đường/nút giao → click để xóa");
+        ToggleButton btnModeDelLight = modeBtn("💡", "Xóa đèn", "Hover vào đèn sáng lên → click để xóa");
         ToggleButton btnModeSim    = modeBtn("🚗", "Mô phỏng",   "Chạy mô phỏng & spawn xe theo tỷ lệ");
 
         // Nút xóa màu đỏ khi active
@@ -133,13 +134,20 @@ public class SimulationApp extends Application {
                     ? "-fx-background-color:#c0392b; -fx-text-fill:white;"
                     : "-fx-background-color:#2e3d52; -fx-text-fill:#c8d0e8;"));
         });
+        btnModeDelLight.selectedProperty().addListener((o, was, is) -> {
+            String base = "-fx-font-size:13px; -fx-font-weight:bold; -fx-cursor:hand; " +
+                    "-fx-pref-height:32px; -fx-padding:3 14 3 14; -fx-background-radius:6;";
+            btnModeDelLight.setStyle(base + (is
+                    ? "-fx-background-color:#c0392b; -fx-text-fill:white;"
+                    : "-fx-background-color:#2e3d52; -fx-text-fill:#c8d0e8;"));
+        });
 
         ToggleGroup modeGroup = new ToggleGroup();
-        for (ToggleButton b : new ToggleButton[]{btnModePan, btnModeDraw, btnModeEdit, btnModeInter, btnModeDelete, btnModeSim})
+        for (ToggleButton b : new ToggleButton[]{btnModePan, btnModeDraw, btnModeEdit, btnModeInter, btnModeDelete, btnModeDelLight, btnModeSim})
             b.setToggleGroup(modeGroup);
         btnModePan.setSelected(true);
 
-        HBox modeBox = new HBox(4, btnModePan, btnModeDraw, btnModeEdit, btnModeInter, btnModeDelete, btnModeSim);
+        HBox modeBox = new HBox(4, btnModePan, btnModeDraw, btnModeEdit, btnModeInter, btnModeDelete, btnModeDelLight, btnModeSim);
         modeBox.setAlignment(Pos.CENTER_LEFT);
 
         Button btnZoomIn  = actionBtn("🔍+", "Phóng to (Scroll)");
@@ -150,10 +158,28 @@ public class SimulationApp extends Application {
         btnZoomIn .setOnAction(e -> view.zoomIn());
         btnZoomOut.setOnAction(e -> view.zoomOut());
         btnUndo   .setOnAction(e -> view.undo());
-        btnClear  .setOnAction(e -> { view.saveSnapshot(); view.setNetwork(new RoadNetwork()); });
+        btnClear  .setOnAction(e -> { 
+            view.saveSnapshot(); 
+            view.getNetwork().clear();
+            view.updateRenderData();
+            if (view.getController() != null) view.getController().clearVehicles();
+            view.redraw();
+        });
 
         CheckBox cbGrid   = styledCb("Lưới",           true,  e -> view.setShowGrid  (((CheckBox)e.getSource()).isSelected()));
         CheckBox cbLabels = styledCb("Nhãn đường",     true,  e -> view.setShowLabels(((CheckBox)e.getSource()).isSelected()));
+
+        ToggleButton btnGraphicMode = new ToggleButton("Đồ họa");
+        btnGraphicMode.setSelected(true);
+        btnGraphicMode.setStyle("-fx-background-color:#2a5a2a; -fx-text-fill:white; -fx-font-weight:bold; -fx-cursor:hand; -fx-padding:2 10 2 10; -fx-background-radius:5; -fx-pref-height:28px;");
+        btnGraphicMode.setOnAction(e -> {
+            boolean isGraphic = btnGraphicMode.isSelected();
+            btnGraphicMode.setText(isGraphic ? "Đồ họa" : "Basic");
+            btnGraphicMode.setStyle(isGraphic ? 
+                "-fx-background-color:#2a5a2a; -fx-text-fill:white; -fx-font-weight:bold; -fx-cursor:hand; -fx-padding:2 10 2 10; -fx-background-radius:5; -fx-pref-height:28px;" : 
+                "-fx-background-color:#6a2a2a; -fx-text-fill:white; -fx-font-weight:bold; -fx-cursor:hand; -fx-padding:2 10 2 10; -fx-background-radius:5; -fx-pref-height:28px;");
+            view.setGraphicMode(isGraphic);
+        });
 
         Label hint = new Label("🖱 TRÁI: Thao tác   PHẢI: Kéo bản đồ   SCROLL: Zoom");
         hint.setStyle("-fx-text-fill:#e8d44d; -fx-font-size:11px; -fx-padding:0 0 0 8;");
@@ -161,7 +187,7 @@ public class SimulationApp extends Application {
         HBox topBar = new HBox(10,
                 modeBox,
                 vsep(), new HBox(4, btnZoomIn, btnZoomOut, btnUndo, btnClear),
-                vsep(), new HBox(10, cbGrid, cbLabels),
+                vsep(), new HBox(10, btnGraphicMode, cbGrid, cbLabels),
                 vsep(), hint);
         topBar.setAlignment(Pos.CENTER_LEFT);
         topBar.setPadding(new Insets(7, 14, 7, 14));
@@ -173,11 +199,12 @@ public class SimulationApp extends Application {
         HBox ctxEdit   = buildCtxEdit();
         HBox ctxInter  = buildCtxIntersection(view);
         HBox ctxDelete = buildCtxDelete();
+        HBox ctxDelLight = buildCtxDelLight();
         HBox ctxSim    = buildCtxSimulation(view, spawner);
 
-        StackPane ctxStack = new StackPane(ctxPan, ctxDraw, ctxEdit, ctxInter, ctxDelete, ctxSim);
+        StackPane ctxStack = new StackPane(ctxPan, ctxDraw, ctxEdit, ctxInter, ctxDelete, ctxDelLight, ctxSim);
         ctxPan.setVisible(true);
-        for (HBox h : new HBox[]{ctxDraw, ctxEdit, ctxInter, ctxDelete, ctxSim}) {
+        for (HBox h : new HBox[]{ctxDraw, ctxEdit, ctxInter, ctxDelete, ctxDelLight, ctxSim}) {
             h.setVisible(false);
             StackPane.setAlignment(h, Pos.CENTER_LEFT);
         }
@@ -192,12 +219,14 @@ public class SimulationApp extends Application {
             ctxEdit  .setVisible(nw == btnModeEdit);
             ctxInter .setVisible(nw == btnModeInter);
             ctxDelete.setVisible(nw == btnModeDelete);
+            ctxDelLight.setVisible(nw == btnModeDelLight);
             ctxSim   .setVisible(nw == btnModeSim);
             if (nw == btnModePan)    view.setInteractionType(SimulationView.InteractionType.PAN);
             if (nw == btnModeDraw)   view.setInteractionType(SimulationView.InteractionType.DRAW_ROAD);
             if (nw == btnModeEdit)   view.setInteractionType(SimulationView.InteractionType.EDIT_MARKINGS);
             if (nw == btnModeInter)  view.setInteractionType(SimulationView.InteractionType.PLACE_INTERSECTION);
             if (nw == btnModeDelete) view.setInteractionType(SimulationView.InteractionType.DELETE);
+            if (nw == btnModeDelLight) view.setInteractionType(SimulationView.InteractionType.DELETE_LIGHT);
             if (nw == btnModeSim)    view.setInteractionType(SimulationView.InteractionType.PAN);
         });
 
@@ -575,6 +604,13 @@ public class SimulationApp extends Application {
         return hbox(tip);
     }
 
+    private HBox buildCtxDelLight() {
+        Label tip = new Label(
+                "💡  Hover lên đèn giao thông → sáng lên  •  Click TRÁI để xóa  •  Ctrl+Z = undo");
+        tip.setStyle("-fx-text-fill:#ff7070; -fx-font-size:11px;");
+        return hbox(tip);
+    }
+
     private HBox buildCtxIntersection(SimulationView view) {
         // ── Loại giao lộ ──
         Label lblType = new Label("Loại:");
@@ -583,9 +619,7 @@ public class SimulationApp extends Application {
         typeBox.getItems().addAll(
                 new String[]{"🔺 Ngã ba",         "3"},
                 new String[]{"✚ Ngã tư",          "4"},
-                new String[]{"⭐ Ngã năm",         "5"},
-                new String[]{"🔄 Vòng xuyến nhỏ", "ROUNDABOUT_S"},
-                new String[]{"🔄 Vòng xuyến lớn", "ROUNDABOUT_L"}
+                new String[]{"⭐ Ngã năm",         "5"}
         );
         typeBox.setValue(new String[]{"✚ Ngã tư", "4"});
         typeBox.setPrefWidth(168);
