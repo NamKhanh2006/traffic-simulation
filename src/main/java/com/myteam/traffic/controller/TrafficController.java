@@ -766,6 +766,10 @@ public class TrafficController {
             path = intersectionNavigator.buildPath(v);
         }
         if (path == null) {
+            v.setPlannedExit(PlannedExit.RANDOM); // Force a random exit to prevent deadlock
+            path = intersectionNavigator.buildPath(v);
+        }
+        if (path == null) {
             v.clearPlannedExit();
             return;
         }

@@ -1753,8 +1753,9 @@ public class SimulationView extends Canvas {
 
             double cx = p[0], cy = p[1];
 
-            // Bỏ qua nếu trùng điểm bắt đầu/kết thúc của đường đang vẽ
-            if (isSamePoint(cx, cy, x1, y1) || isSamePoint(cx, cy, x2, y2)) continue;
+            // CHÚ Ý: Bỏ qua giới hạn skip điểm đầu/điểm cuối, để cho phép tạo T-junction
+            // nếu điểm đầu/cuối của đường mới vẽ nằm chèn lên một con đường có sẵn.
+            // if (isSamePoint(cx, cy, x1, y1) || isSamePoint(cx, cy, x2, y2)) continue;
 
             // Tìm intersection có sẵn gần điểm cắt (snap radius lớn hơn: 60 world units)
             Intersection nearInter = network.findNearestIntersection(cx, cy, 60.0);
@@ -1793,12 +1794,15 @@ public class SimulationView extends Canvas {
         GeneralIntersection lastNode = null;
 
         for (HitGroup group : hits) {
-            if (isSamePoint(curX, curY, group.x, group.y)) continue;
+            boolean isStartPoint = isSamePoint(curX, curY, group.x, group.y);
 
-            // Tạo đoạn đường từ vị trí hiện tại đến điểm giao
-            RoadSegment inPart = new RoadSegment(curX, curY, group.x, group.y, newLanes);
-            network.addSegment(inPart);
-            if (lastNode != null) lastNode.connectRoad(inPart, ConnectionPoint.End.START);
+            RoadSegment inPart = null;
+            if (!isStartPoint) {
+                // Tạo đoạn đường từ vị trí hiện tại đến điểm giao
+                inPart = new RoadSegment(curX, curY, group.x, group.y, newLanes);
+                network.addSegment(inPart);
+                if (lastNode != null) lastNode.connectRoad(inPart, ConnectionPoint.End.START);
+            }
 
             GeneralIntersection workNode;
 
@@ -1835,7 +1839,9 @@ public class SimulationView extends Canvas {
                 }
             }
 
-            workNode.connectRoad(inPart, ConnectionPoint.End.END);
+            if (inPart != null) {
+                workNode.connectRoad(inPart, ConnectionPoint.End.END);
+            }
             lastNode = workNode;
             curX = group.x; curY = group.y;
         }

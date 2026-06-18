@@ -295,6 +295,8 @@ public class IntersectionNavigator {
             ConnectionPoint entry,
             List<ConnectionPoint> validExits,
             PlannedExit planned) {
+        if (validExits.isEmpty()) return null;
+
         if (planned == PlannedExit.RANDOM) {
             return validExits.get(ThreadLocalRandom.current().nextInt(validExits.size()));
         }
@@ -306,20 +308,23 @@ public class IntersectionNavigator {
         sorted.sort(Comparator.comparingDouble(cp -> Math.atan2(cp.getY() - cy, cp.getX() - cx)));
 
         int entryIdx = sorted.indexOf(entry);
-        if (entryIdx < 0)
-            return null;
+        if (entryIdx < 0) return validExits.get(0);
 
         int n = sorted.size();
-        ConnectionPoint target = switch (planned) {
-            case LEFT -> sorted.get((entryIdx + 1) % n);
-            case RIGHT -> sorted.get((entryIdx - 1 + n) % n);
-            case STRAIGHT -> pickOppositeArm(validExits, entry, cx, cy);
-            case U_TURN -> pickOppositeArm(validExits, entry, cx, cy);
-            default -> null;
-        };
+        ConnectionPoint target = null;
+        switch (planned) {
+            case LEFT -> target = sorted.get((entryIdx + 1) % n);
+            case RIGHT -> target = sorted.get((entryIdx - 1 + n) % n);
+            case STRAIGHT, U_TURN -> target = pickOppositeArm(validExits, entry, cx, cy);
+            default -> target = pickOppositeArm(validExits, entry, cx, cy);
+        }
 
         if (target == null || target == entry || !validExits.contains(target)) {
-            return pickOppositeArm(validExits, entry, cx, cy);
+            target = pickOppositeArm(validExits, entry, cx, cy);
+        }
+        
+        if (target == null) {
+            return validExits.get(0);
         }
         return target;
     }
