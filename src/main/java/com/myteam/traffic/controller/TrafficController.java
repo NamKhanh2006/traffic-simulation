@@ -791,10 +791,6 @@ public class TrafficController {
             }
         }
 
-        // Fallback: đèn global
-        if (!lights.isEmpty())
-            return lights.get(0).getCurrentState();
-
         return TrafficLightState.GREEN;
     }
 
