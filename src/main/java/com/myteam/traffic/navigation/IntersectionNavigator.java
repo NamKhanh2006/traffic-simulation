@@ -78,16 +78,20 @@ public class IntersectionNavigator {
             RoadSegment inSeg, Lane inLane, ConnectionPoint entryCP,
             RoadSegment outSeg, Lane outLane, ConnectionPoint exitCP) {
 
-        // Lấy tọa độ tâm LÀN VÀO
-        double inT = (inLane.getDirection() == Lane.Direction.FORWARD) ? 1.0 : 0.0;
+        double interRadius = intersection.getRenderData() != null ? intersection.getRenderData().radius : 30.0;
+        
+        // Lấy tọa độ tâm LÀN VÀO (ở mép giao lộ)
+        double inMargin = interRadius / inSeg.getLength();
+        double inT = (inLane.getDirection() == Lane.Direction.FORWARD) ? 1.0 - inMargin : inMargin;
         double[] inPose = inSeg.getPositionOnLane(inLane.getIndex(), inT);
         double startX = inPose[0];
         double startY = inPose[1];
         // Hướng THỰC TẾ xe đang di chuyển — xem effectiveHeadingDeg()
         double startHeading = effectiveHeadingDeg(inSeg, inLane, inT, inPose[2]);
 
-        // Lấy tọa độ tâm LÀN RA
-        double outT = (exitCP.getEnd() == ConnectionPoint.End.START) ? 0.0 : 1.0;
+        // Lấy tọa độ tâm LÀN RA (ở mép giao lộ)
+        double outMargin = interRadius / outSeg.getLength();
+        double outT = (exitCP.getEnd() == ConnectionPoint.End.START) ? outMargin : 1.0 - outMargin;
         double[] outPose = outSeg.getPositionOnLane(outLane.getIndex(), outT);
         double endX = outPose[0];
         double endY = outPose[1];
@@ -127,19 +131,14 @@ public class IntersectionNavigator {
     }
 
     public boolean canMerge(Vehicle entering, Intersection intersection, List<Vehicle> allVehicles) {
-        // Tạm thời tạo đường cong cho xe sắp vào dựa trên PlannedExit hiện tại
         PlannedExit originalExit = entering.getPlannedExit();
         if (originalExit == PlannedExit.NONE)
-            return true; // không có ý định rẽ → không vào giao lộ?
+            return true;
 
-        // Lưu lại plannedExit tạm thời (xe chưa chính thức chuyển mode)
         IntersectionPath futurePath = buildTemporaryPath(entering, intersection);
         if (futurePath == null)
             return true;
 
-        // Khoảng cách an toàn được "nở" theo kích thước của xe sắp vào.
-        // Cộng thêm kích thước xe other (bên trong vòng lặp) để có
-        // khoảng cách an toàn riêng cho từng cặp xe.
         double enteringHalfLen = vehicleLength(entering) / 2.0;
 
         for (Vehicle other : allVehicles) {
@@ -150,11 +149,30 @@ public class IntersectionNavigator {
             if (other.getCurrentIntersection() != intersection)
                 continue;
 
-            // Lấy mẫu trên đường cong để tìm khoảng cách gần nhất tới vị trí HIỆN TẠI của xe kia
-            double minDist = findMinDistanceToPath(futurePath, other.getPosition());
+            IntersectionPath otherPath = other.getActivePath();
+            if (otherPath == null) continue;
 
-            // Khoảng cách an toàn = nền tảng + nửa chiều dài của CẢ HAI xe.
-            double safeDist = MERGE_SAFE_DISTANCE + enteringHalfLen + vehicleLength(other) / 2.0;
+            // KIỂM TRA CẮT QUỸ ĐẠO: Lấy mẫu xem 2 quỹ đạo có chạm nhau không.
+            // Ngưỡng 2.5m để các làn song song (cách nhau 3.5m) không bị coi là cắt nhau.
+            boolean pathsCross = false;
+            for (int i = 0; i <= 10; i++) {
+                double[] p1 = futurePath.sampleAt((i / 10.0) * futurePath.getPathLength());
+                for (int j = 0; j <= 10; j++) {
+                    double[] p2 = otherPath.sampleAt((j / 10.0) * otherPath.getPathLength());
+                    if (Math.hypot(p1[0] - p2[0], p1[1] - p2[1]) < 2.5) {
+                        pathsCross = true;
+                        break;
+                    }
+                }
+                if (pathsCross) break;
+            }
+
+            // Nếu không cắt nhau (đi song song), không cần nhường
+            if (!pathsCross) continue;
+
+            // Nếu có cắt nhau, kiểm tra xem xe kia đã đi qua hay đang cản đường
+            double minDist = findMinDistanceToPath(futurePath, other.getPosition());
+            double safeDist = 15.0 + enteringHalfLen + vehicleLength(other) / 2.0;
 
             if (minDist < safeDist) {
                 return false;
@@ -205,15 +223,18 @@ public class IntersectionNavigator {
         RoadSegment outSeg = exitCP.getSegment();
         Lane outLane = pickDepartureLane(outSeg, exitCP.getEnd());
 
-        // --- Tính điểm vào (tâm làn hiện tại tại đầu mút segment) ---
-        double inT = (lane.getDirection() == Lane.Direction.FORWARD) ? 1.0 : 0.0;
+        // --- Tính điểm vào (tâm làn hiện tại tại đầu mút segment, mép giao lộ) ---
+        double interRadius = intersection.getRenderData() != null ? intersection.getRenderData().radius : 30.0;
+        double inMargin = interRadius / segment.getLength();
+        double inT = (lane.getDirection() == Lane.Direction.FORWARD) ? 1.0 - inMargin : inMargin;
         double[] inPose = segment.getPositionOnLane(lane.getIndex(), inT);
         double startX = inPose[0];
         double startY = inPose[1];
         double startHeadingDeg = effectiveHeadingDeg(segment, lane, inT, inPose[2]);
 
-        // --- Tính điểm ra (tâm làn trên segment ra) ---
-        double outT = (exitCP.getEnd() == ConnectionPoint.End.START) ? 0.0 : 1.0;
+        // --- Tính điểm ra (tâm làn trên segment ra, mép giao lộ) ---
+        double outMargin = interRadius / outSeg.getLength();
+        double outT = (exitCP.getEnd() == ConnectionPoint.End.START) ? outMargin : 1.0 - outMargin;
         double[] outPose = outSeg.getPositionOnLane(outLane.getIndex(), outT);
         double endX = outPose[0];
         double endY = outPose[1];
@@ -250,7 +271,9 @@ public class IntersectionNavigator {
         RoadSegment segment = exit.getSegment();
         Lane lane = pickDepartureLane(segment, exit.getEnd());
 
-        double t = (exit.getEnd() == ConnectionPoint.End.START) ? 0.0 : 1.0;
+        double interRadius = path.getIntersection().getRenderData() != null ? path.getIntersection().getRenderData().radius : 30.0;
+        double outMargin = interRadius / segment.getLength();
+        double t = (exit.getEnd() == ConnectionPoint.End.START) ? outMargin : 1.0 - outMargin;
         vehicle.exitToSegment(segment, lane, t);
     }
 

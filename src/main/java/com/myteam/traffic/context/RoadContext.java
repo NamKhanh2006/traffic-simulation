@@ -47,7 +47,7 @@ public class RoadContext {
     // =========================================================
     // Khoảng cách an toàn tối thiểu giữa hai xe (world units)
     // =========================================================
-    public static final double SAFE_DISTANCE = 100.0;
+    public static final double SAFE_DISTANCE = 15.0;
 
     // =========================================================
     // Fields — tất cả final, không thể thay đổi sau khi build

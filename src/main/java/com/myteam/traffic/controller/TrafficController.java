@@ -541,14 +541,38 @@ public class TrafficController {
         double newProgress = v.getSegmentProgress() + dp;
         newProgress = Math.max(0, Math.min(1, newProgress));
 
+        com.myteam.traffic.model.infrastructure.intersection.Intersection upcoming = intersectionNavigator.peekUpcomingIntersection(v);
+        double interRadius = (upcoming != null) ? upcoming.getRenderData().radius : 30.0;
+
+        // NẾU SẮP VÀO GIAO LỘ: Ép dừng tại mép giao lộ nếu không thể an toàn tiến vào
+        if (upcoming != null) {
+            double edgeMargin = interRadius / seg.getLength();
+            boolean isForward = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD);
+            
+            // Ép dừng tại mép giao lộ nếu không thể an toàn tiến vào
+            if (!intersectionNavigator.canMerge(v, upcoming, vehicles)) {
+                double edgeProgress = isForward ? (1.0 - edgeMargin) : edgeMargin;
+                if (isForward) {
+                    if (newProgress >= edgeProgress) {
+                        newProgress = edgeProgress;
+                        v.setSpeed(Math.max(0, v.getSpeed() - NORMAL_BRAKE * deltaTime));
+                    }
+                } else {
+                    if (newProgress <= edgeProgress) {
+                        newProgress = edgeProgress;
+                        v.setSpeed(Math.max(0, v.getSpeed() - NORMAL_BRAKE * deltaTime));
+                    }
+                }
+            }
+        }
+
         // FIX LỖI VƯỢT STOPLINE: Dừng trước stopline (mép ngoài giao lộ)
         TrafficLightState lightState = getCurrentLightState(v);
         if (lightState == TrafficLightState.RED || lightState == TrafficLightState.YELLOW) {
             boolean isForward = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD);
             // stopMargin = phần progress tương ứng với (bán kính giao lộ + khoảng đệm 5 units)
             // Xe sẽ dừng ngay sát mép ngoài vòng tròn giao lộ
-            com.myteam.traffic.model.infrastructure.intersection.Intersection upcoming = intersectionNavigator.peekUpcomingIntersection(v);
-            double interRadius = (upcoming != null) ? upcoming.getRenderData().radius : 30.0;
+            // (upcoming và interRadius đã được lấy ở trên)
             double stopMargin = (interRadius + 5.0) / seg.getLength();
 
             if (isForward) {
@@ -654,48 +678,25 @@ public class TrafficController {
         if (v.getPlannedExit() == PlannedExit.NONE)
             return;
 
-        boolean readyToEnter = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD)
-                ? v.getSegmentProgress() >= 1.0
-                : v.getSegmentProgress() <= 0.0;
-
-        if (!readyToEnter)
-            return;
-
         Intersection upcoming = intersectionNavigator.peekUpcomingIntersection(v);
         if (upcoming == null)
+            return;
+
+        double interRadius = upcoming.getRenderData() != null ? upcoming.getRenderData().radius : 30.0;
+        double edgeMargin = interRadius / v.getCurrentSegment().getLength();
+
+        boolean readyToEnter = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD)
+                ? v.getSegmentProgress() >= 1.0 - edgeMargin - 0.005
+                : v.getSegmentProgress() <= edgeMargin + 0.005;
+
+        if (!readyToEnter)
             return;
 
         // Kiểm tra an toàn với các xe đã ở trong giao lộ (canMerge)
         if (!intersectionNavigator.canMerge(v, upcoming, vehicles))
             return;
 
-        // ***** BỔ SUNG: Kiểm tra xe khác trên cùng segment cũng sắp vào *****
-        for (Vehicle other : vehicles) {
-            if (other == v)
-                continue;
-            if (other.getTravelMode() == TravelMode.ON_SEGMENT && other.getCurrentSegment() == v.getCurrentSegment()) {
-                // Xe khác cùng hướng và đang ở cuối đoạn đường (gần intersection)
-                boolean otherReady = (other.getCurrentLane().getDirection() == v.getCurrentLane().getDirection())
-                        ? other.getSegmentProgress() >= 0.98
-                        : other.getSegmentProgress() <= 0.02;
-                if (otherReady) {
-                    // Nếu xe khác quá gần (dưới 30m), không cho vào
-                    double dist = v.getPosition().distanceTo(other.getPosition());
-                    if (dist < 30.0) {
-                        return;
-                    }
-                }
-            }
-            // Kiểm tra xe đã có planned exit và đang ở gần (tránh hai xe cùng đợi)
-            if (other.getPlannedExit() != PlannedExit.NONE && other.getCurrentSegment() == v.getCurrentSegment()) {
-                double dist = v.getPosition().distanceTo(other.getPosition());
-                if (dist < 40.0) {
-                    return; // nhường cho xe đã chờ trước
-                }
-            }
-        }
-        // ********************************************************
-
+        // Tiến hành tạo quỹ đạo IntersectionPath
         IntersectionPath path = intersectionNavigator.buildPath(v);
         if (path == null) {
             v.setPlannedExit(PlannedExit.STRAIGHT);
