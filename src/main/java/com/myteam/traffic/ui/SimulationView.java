@@ -2140,14 +2140,14 @@ public class SimulationView extends Canvas {
         network.addIntersection(new com.myteam.traffic.model.infrastructure.intersection.GeneralIntersection(500, 500, 4));
 
         // 1. Vẽ các trục ngang (chỉ vẽ đúng chiều dài thực tế để không dư nét tạo thành ngã tư)
-        commitWithIntersections(200, 200, 800, 200, SimulationApp.createLanes(2)); // Ngang trên
-        commitWithIntersections(200, 500, 800, 500, SimulationApp.createLanes(2)); // Ngang giữa
-        commitWithIntersections(200, 800, 800, 800, SimulationApp.createLanes(2)); // Ngang dưới
+        commitWithIntersections(200, 200, 800, 200, SimulationApp.createLanes(4)); // Ngang trên
+        commitWithIntersections(200, 500, 800, 500, SimulationApp.createLanes(4)); // Ngang giữa
+        commitWithIntersections(200, 800, 800, 800, SimulationApp.createLanes(4)); // Ngang dưới
 
         // 2. Vẽ các trục dọc
-        commitWithIntersections(200, 200, 200, 800, SimulationApp.createLanes(2)); // Dọc trái
-        commitWithIntersections(500, 200, 500, 800, SimulationApp.createLanes(2)); // Dọc giữa
-        commitWithIntersections(800, 200, 800, 800, SimulationApp.createLanes(2)); // Dọc phải
+        commitWithIntersections(200, 200, 200, 800, SimulationApp.createLanes(4)); // Dọc trái
+        commitWithIntersections(500, 200, 500, 800, SimulationApp.createLanes(4)); // Dọc giữa
+        commitWithIntersections(800, 200, 800, 800, SimulationApp.createLanes(4)); // Dọc phải
 
         // 3. Thêm tự động đèn giao thông (có đếm ngược) cho các giao lộ từ ngã 3 trở lên
         if (controller != null) {
