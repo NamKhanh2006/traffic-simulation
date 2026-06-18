@@ -567,24 +567,26 @@ public class TrafficController {
         }
 
         // FIX LỖI VƯỢT STOPLINE: Dừng trước stopline (mép ngoài giao lộ)
-        TrafficLightState lightState = getCurrentLightState(v);
-        if (lightState == TrafficLightState.RED || lightState == TrafficLightState.YELLOW) {
-            boolean isForward = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD);
-            // stopMargin = phần progress tương ứng với (bán kính giao lộ + khoảng đệm 5 units)
-            // Xe sẽ dừng ngay sát mép ngoài vòng tròn giao lộ
-            // (upcoming và interRadius đã được lấy ở trên)
-            double stopMargin = (interRadius + 5.0) / seg.getLength();
+        if (!v.isEmergency()) {
+            TrafficLightState lightState = getCurrentLightState(v);
+            if (lightState == TrafficLightState.RED || lightState == TrafficLightState.YELLOW) {
+                boolean isForward = (v.getCurrentLane().getDirection() == Lane.Direction.FORWARD);
+                // stopMargin = phần progress tương ứng với (bán kính giao lộ + khoảng đệm 5 units)
+                // Xe sẽ dừng ngay sát mép ngoài vòng tròn giao lộ
+                // (upcoming và interRadius đã được lấy ở trên)
+                double stopMargin = (interRadius + 5.0) / seg.getLength();
 
-            if (isForward) {
-                double stopProgress = 1.0 - stopMargin;
-                // Chỉ clamp nếu xe CHƯA vượt qua stopline
-                if (v.getSegmentProgress() < stopProgress + 0.005) {
-                    newProgress = Math.min(newProgress, stopProgress);
-                }
-            } else {
-                double stopProgress = stopMargin;
-                if (v.getSegmentProgress() > stopProgress - 0.005) {
-                    newProgress = Math.max(newProgress, stopProgress);
+                if (isForward) {
+                    double stopProgress = 1.0 - stopMargin;
+                    // Chỉ clamp nếu xe CHƯA vượt qua stopline
+                    if (v.getSegmentProgress() < stopProgress + 0.005) {
+                        newProgress = Math.min(newProgress, stopProgress);
+                    }
+                } else {
+                    double stopProgress = stopMargin;
+                    if (v.getSegmentProgress() > stopProgress - 0.005) {
+                        newProgress = Math.max(newProgress, stopProgress);
+                    }
                 }
             }
         }
