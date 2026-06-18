@@ -44,96 +44,130 @@ public class VehicleRenderer {
         gc.translate(x, y);
         gc.rotate(angleDeg);
 
-        if (vehicle.getType() == com.myteam.traffic.vehicle.VehicleType.BICYCLE || 
-            vehicle.getType() == com.myteam.traffic.vehicle.VehicleType.MOTORBIKE) {
+        if (!isGraphicMode) {
+            // Basic Mode: Khối màu trắng, có viền đen
+            gc.setFill(Color.WHITE);
+            gc.fillRect(-l / 2, -w / 2, l, w);
+            gc.setStroke(Color.BLACK);
+            gc.setLineWidth(1.0);
+            gc.strokeRect(-l / 2, -w / 2, l, w);
+
+            // Ghi tên phương tiện
+            gc.setFill(Color.BLACK);
+            String text = vehicle.getType() != null ? vehicle.getType().name() : "VEH";
+            if (text.length() > 4) {
+                text = text.substring(0, 4);
+            }
             
-            boolean isMoto = (vehicle.getType() == com.myteam.traffic.vehicle.VehicleType.MOTORBIKE);
-            double wheelR = isMoto ? 1.8 : 1.2;
+            // Xoay ngược chữ lại nếu xe đang đi hướng ngược (góc từ 90 đến 270)
+            // để chữ không bị lộn ngược hoàn toàn.
+            double normAngle = (angleDeg % 360 + 360) % 360;
+            if (normAngle > 90 && normAngle < 270) {
+                gc.rotate(180);
+            }
             
-            // 1. Bánh xe (đen sẫm)
-            gc.setFill(Color.web("#2c3e50")); 
-            gc.fillOval(l/2 - wheelR*2, -wheelR, wheelR*2, wheelR*2); // Bánh trước
-            gc.fillOval(-l/2, -wheelR, wheelR*2, wheelR*2); // Bánh sau
-
-            // 2. Thân/Khung xe
-            gc.setStroke(getBaseColor(vehicle));
-            gc.setLineWidth(isMoto ? 3.5 : 1.5);
-            gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND);
-            gc.strokeLine(-l/2 + wheelR, 0, l/2 - wheelR, 0);
-
-            // 3. Tay lái
-            gc.setStroke(Color.web("#bdc3c7"));
-            gc.setLineWidth(isMoto ? 1.5 : 1.0);
-            gc.strokeLine(l/4, -w/2 + 0.5, l/4, w/2 - 0.5);
-
-            // 4. Người lái (đội mũ bảo hiểm / đầu)
-            gc.setFill(Color.web("#34495e"));
-            double riderR = isMoto ? 2.2 : 1.8;
-            gc.fillOval(-riderR/2, -riderR, riderR*2, riderR*2); // Vị trí người lái lùi về sau tay lái
-
-            // 5. Đèn xe cho xe máy
-            if (isMoto) {
-                // Đèn pha trước
-                gc.setFill(Color.web("#f1c40f", 0.9));
-                gc.fillOval(l/2 - 2.0, -1.0, 2.5, 2.0);
-                
-                // Đèn hậu đỏ sau
-                gc.setFill(Color.web("#ff0000", 0.9));
-                gc.fillOval(-l/2 - 1.0, -1.0, 1.5, 2.0);
+            gc.setFont(javafx.scene.text.Font.font("Monospaced", javafx.scene.text.FontWeight.BOLD, Math.max(w * 0.5, 4.0)));
+            gc.setTextAlign(javafx.scene.text.TextAlignment.CENTER);
+            gc.setTextBaseline(javafx.geometry.VPos.CENTER);
+            gc.fillText(text, 0, 0);
+            
+            // Revert rotation if we rotated text
+            if (normAngle > 90 && normAngle < 270) {
+                gc.rotate(-180);
             }
 
         } else {
-            // Logic vẽ ô tô hiện tại
-            // 1. Vẽ thân xe dạng hình chữ nhật bo góc
-            Color baseColor = getBaseColor(vehicle);
-            gc.setFill(baseColor);
-            gc.fillRoundRect(-l / 2, -w / 2, l, w, 4, 4);
+            if (vehicle.getType() == com.myteam.traffic.vehicle.VehicleType.BICYCLE || 
+                vehicle.getType() == com.myteam.traffic.vehicle.VehicleType.MOTORBIKE) {
+                
+                boolean isMoto = (vehicle.getType() == com.myteam.traffic.vehicle.VehicleType.MOTORBIKE);
+                double wheelR = isMoto ? 1.8 : 1.2;
+                
+                // 1. Bánh xe (đen sẫm)
+                gc.setFill(Color.web("#2c3e50")); 
+                gc.fillOval(l/2 - wheelR*2, -wheelR, wheelR*2, wheelR*2); // Bánh trước
+                gc.fillOval(-l/2, -wheelR, wheelR*2, wheelR*2); // Bánh sau
 
-            // Vẽ viền xe
-            gc.setStroke(baseColor.darker());
-            gc.setLineWidth(1.0);
-            gc.strokeRoundRect(-l / 2, -w / 2, l, w, 4, 4);
+                // 2. Thân/Khung xe
+                gc.setStroke(getBaseColor(vehicle));
+                gc.setLineWidth(isMoto ? 3.5 : 1.5);
+                gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND);
+                gc.strokeLine(-l/2 + wheelR, 0, l/2 - wheelR, 0);
 
-            // 2. Vẽ kính chắn gió phía ĐẦU xe (trục X dương)
-            gc.setFill(Color.web("#8cd4ff", 0.8)); // Kính màu xanh lơ
-            gc.fillRect(l / 4 - 1, -w / 2 + 1.5, l * 0.15, w - 3);
+                // 3. Tay lái
+                gc.setStroke(Color.web("#bdc3c7"));
+                gc.setLineWidth(isMoto ? 1.5 : 1.0);
+                gc.strokeLine(l/4, -w/2 + 0.5, l/4, w/2 - 0.5);
 
-            // 3. Kính hậu phía ĐUÔI xe
-            gc.setFill(Color.web("#2c3e50", 0.8)); // Kính tối màu
-            gc.fillRect(-l / 2 + 2, -w / 2 + 2, l * 0.1, w - 4);
+                // 4. Người lái (đội mũ bảo hiểm / đầu)
+                gc.setFill(Color.web("#34495e"));
+                double riderR = isMoto ? 2.2 : 1.8;
+                gc.fillOval(-riderR/2, -riderR, riderR*2, riderR*2); // Vị trí người lái lùi về sau tay lái
 
-            // 4. ĐÈN PHA (Đầu xe - màu vàng sáng)
-            gc.setFill(Color.web("#f1c40f", 0.9));
-            gc.fillOval(l / 2 - 2, -w / 2 + 1, 2, 2.5); // Pha trái
-            gc.fillOval(l / 2 - 2, w / 2 - 3.5, 2, 2.5); // Pha phải
-
-            // 5. ĐÈN HẬU (Đuôi xe - màu đỏ rực)
-            gc.setFill(Color.web("#ff0000", 0.9));
-            gc.fillOval(-l / 2, -w / 2 + 1, 2, 2.5); // Hậu trái
-            gc.fillOval(-l / 2, w / 2 - 3.5, 2, 2.5); // Hậu phải
-
-            // Nếu là xe ưu tiên (cứu hỏa/cứu thương), vẽ đèn còi trên nóc
-            if (vehicle.isEmergency()) {
-                boolean sirenActive = true;
-                if (vehicle instanceof com.myteam.traffic.vehicle.emergency.EmergencyVehicle) {
-                    sirenActive = ((com.myteam.traffic.vehicle.emergency.EmergencyVehicle) vehicle).isSirenOn();
+                // 5. Đèn xe cho xe máy
+                if (isMoto) {
+                    // Đèn pha trước
+                    gc.setFill(Color.web("#f1c40f", 0.9));
+                    gc.fillOval(l/2 - 2.0, -1.0, 2.5, 2.0);
+                    
+                    // Đèn hậu đỏ sau
+                    gc.setFill(Color.web("#ff0000", 0.9));
+                    gc.fillOval(-l/2 - 1.0, -1.0, 1.5, 2.0);
                 }
 
-                // Đèn cơ bản
-                gc.setFill(Color.BLUE.darker());
-                gc.fillRect(-2, -w / 2 + 1, 4, 3);
-                gc.setFill(Color.RED.darker());
-                gc.fillRect(-2, w / 2 - 4, 4, 3);
+            } else {
+                // Logic vẽ ô tô hiện tại
+                // 1. Vẽ thân xe dạng hình chữ nhật bo góc
+                Color baseColor = getBaseColor(vehicle);
+                gc.setFill(baseColor);
+                gc.fillRoundRect(-l / 2, -w / 2, l, w, 4, 4);
 
-                // Hiệu ứng chớp sáng khi bật còi
-                if (sirenActive) {
-                    long time = System.currentTimeMillis();
-                    if ((time / 150) % 2 == 0) {
-                        gc.setFill(Color.RED);
-                        gc.fillRect(-3, -w / 2 + 0.5, 6, 4); // Chớp đỏ to hơn
-                    } else {
-                        gc.setFill(Color.BLUE);
-                        gc.fillRect(-3, w / 2 - 4.5, 6, 4);  // Chớp xanh to hơn
+                // Vẽ viền xe
+                gc.setStroke(baseColor.darker());
+                gc.setLineWidth(1.0);
+                gc.strokeRoundRect(-l / 2, -w / 2, l, w, 4, 4);
+
+                // 2. Vẽ kính chắn gió phía ĐẦU xe (trục X dương)
+                gc.setFill(Color.web("#8cd4ff", 0.8)); // Kính màu xanh lơ
+                gc.fillRect(l / 4 - 1, -w / 2 + 1.5, l * 0.15, w - 3);
+
+                // 3. Kính hậu phía ĐUÔI xe
+                gc.setFill(Color.web("#2c3e50", 0.8)); // Kính tối màu
+                gc.fillRect(-l / 2 + 2, -w / 2 + 2, l * 0.1, w - 4);
+
+                // 4. ĐÈN PHA (Đầu xe - màu vàng sáng)
+                gc.setFill(Color.web("#f1c40f", 0.9));
+                gc.fillOval(l / 2 - 2, -w / 2 + 1, 2, 2.5); // Pha trái
+                gc.fillOval(l / 2 - 2, w / 2 - 3.5, 2, 2.5); // Pha phải
+
+                // 5. ĐÈN HẬU (Đuôi xe - màu đỏ rực)
+                gc.setFill(Color.web("#ff0000", 0.9));
+                gc.fillOval(-l / 2, -w / 2 + 1, 2, 2.5); // Hậu trái
+                gc.fillOval(-l / 2, w / 2 - 3.5, 2, 2.5); // Hậu phải
+
+                // Nếu là xe ưu tiên (cứu hỏa/cứu thương), vẽ đèn còi trên nóc
+                if (vehicle.isEmergency()) {
+                    boolean sirenActive = true;
+                    if (vehicle instanceof com.myteam.traffic.vehicle.emergency.EmergencyVehicle) {
+                        sirenActive = ((com.myteam.traffic.vehicle.emergency.EmergencyVehicle) vehicle).isSirenOn();
+                    }
+
+                    // Đèn cơ bản
+                    gc.setFill(Color.BLUE.darker());
+                    gc.fillRect(-2, -w / 2 + 1, 4, 3);
+                    gc.setFill(Color.RED.darker());
+                    gc.fillRect(-2, w / 2 - 4, 4, 3);
+
+                    // Hiệu ứng chớp sáng khi bật còi
+                    if (sirenActive) {
+                        long time = System.currentTimeMillis();
+                        if ((time / 150) % 2 == 0) {
+                            gc.setFill(Color.RED);
+                            gc.fillRect(-3, -w / 2 + 0.5, 6, 4); // Chớp đỏ to hơn
+                        } else {
+                            gc.setFill(Color.BLUE);
+                            gc.fillRect(-3, w / 2 - 4.5, 6, 4);  // Chớp xanh to hơn
+                        }
                     }
                 }
             }

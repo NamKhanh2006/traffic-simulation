@@ -155,13 +155,25 @@ public class SimulationApp extends Application {
         CheckBox cbGrid   = styledCb("Lưới",           true,  e -> view.setShowGrid  (((CheckBox)e.getSource()).isSelected()));
         CheckBox cbLabels = styledCb("Nhãn đường",     true,  e -> view.setShowLabels(((CheckBox)e.getSource()).isSelected()));
 
+        ToggleButton btnGraphicMode = new ToggleButton("Đồ họa");
+        btnGraphicMode.setSelected(true);
+        btnGraphicMode.setStyle("-fx-background-color:#2a5a2a; -fx-text-fill:white; -fx-font-weight:bold; -fx-cursor:hand; -fx-padding:2 10 2 10; -fx-background-radius:5; -fx-pref-height:28px;");
+        btnGraphicMode.setOnAction(e -> {
+            boolean isGraphic = btnGraphicMode.isSelected();
+            btnGraphicMode.setText(isGraphic ? "Đồ họa" : "Basic");
+            btnGraphicMode.setStyle(isGraphic ? 
+                "-fx-background-color:#2a5a2a; -fx-text-fill:white; -fx-font-weight:bold; -fx-cursor:hand; -fx-padding:2 10 2 10; -fx-background-radius:5; -fx-pref-height:28px;" : 
+                "-fx-background-color:#6a2a2a; -fx-text-fill:white; -fx-font-weight:bold; -fx-cursor:hand; -fx-padding:2 10 2 10; -fx-background-radius:5; -fx-pref-height:28px;");
+            view.setGraphicMode(isGraphic);
+        });
+
         Label hint = new Label("🖱 TRÁI: Thao tác   PHẢI: Kéo bản đồ   SCROLL: Zoom");
         hint.setStyle("-fx-text-fill:#e8d44d; -fx-font-size:11px; -fx-padding:0 0 0 8;");
 
         HBox topBar = new HBox(10,
                 modeBox,
                 vsep(), new HBox(4, btnZoomIn, btnZoomOut, btnUndo, btnClear),
-                vsep(), new HBox(10, cbGrid, cbLabels),
+                vsep(), new HBox(10, btnGraphicMode, cbGrid, cbLabels),
                 vsep(), hint);
         topBar.setAlignment(Pos.CENTER_LEFT);
         topBar.setPadding(new Insets(7, 14, 7, 14));

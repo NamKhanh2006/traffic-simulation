@@ -62,6 +62,14 @@ public class SimulationView extends Canvas {
     private boolean isDrawing = false;
     private double  drawStartX, drawStartY, drawCurrentX, drawCurrentY;
 
+    private boolean isGraphicMode = true;
+
+    public void setGraphicMode(boolean b) {
+        this.isGraphicMode = b;
+        redraw();
+    }
+    public boolean isGraphicMode() { return isGraphicMode; }
+
     private com.myteam.traffic.controller.TrafficController controller;
     private final VehicleRenderer vehicleRenderer = new VehicleRenderer();
 
@@ -502,7 +510,7 @@ public class SimulationView extends Canvas {
             gc.translate(translateX, translateY);
             gc.scale(scale, scale);
             for (Vehicle v : controller.getVehicles()) {
-                vehicleRenderer.render(gc, v, true);
+                vehicleRenderer.render(gc, v, isGraphicMode);
                 if (deleteVehicleMode && v == hoveredVehicle) {
                     gc.save();
                     gc.translate(v.getX(), v.getY());
