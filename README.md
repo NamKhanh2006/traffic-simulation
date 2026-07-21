@@ -2,6 +2,8 @@
 
 Đây là một dự án phần mềm mô phỏng giao thông cơ bản được xây dựng bằng ngôn ngữ Java và giao diện JavaFX. Dự án tập trung vào việc mô phỏng chuyển động của các phương tiện, hành vi của người lái và sự tuân thủ các quy tắc giao thông cơ bản tại các nút giao.
 
+![Giao diện mô phỏng](docs/images/Screenshot%202026-07-21%20190423.png)
+
 ## Tính Năng Chính
 
 *   **Đa dạng phương tiện:** Hỗ trợ mô phỏng các loại phương tiện như Ô tô, Xe máy, Xe đạp, cùng với các phương tiện ưu tiên (khẩn cấp).
